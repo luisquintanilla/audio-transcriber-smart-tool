@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>AudioTranscriber</AssemblyName>
+    <RootNamespace>AudioTranscriber</RootNamespace>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <EnableWhisperModelGarden Condition="'$(EnableWhisperModelGarden)' == ''">false</EnableWhisperModelGarden>
+    <WhisperBasePackageVersion Condition="'$(WhisperBasePackageVersion)' == ''">0.1.0</WhisperBasePackageVersion>
+    <ModelPackagesVersion Condition="'$(ModelPackagesVersion)' == ''">0.1.0-preview.15</ModelPackagesVersion>
+    <MLNetAudioInferenceVersion Condition="'$(MLNetAudioInferenceVersion)' == ''">0.1.0-preview.2</MLNetAudioInferenceVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Whisper.net" Version="1.9.0" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.0" />
+  </ItemGroup>
+
+  <!-- Opt in explicitly. This is intentionally disabled for the deterministic default build. -->
+  <ItemGroup Condition="'$(EnableWhisperModelGarden)' == 'true'">
+    <PackageReference Include="DotnetAILab.ModelGarden.ASR.WhisperBase" Version="$(WhisperBasePackageVersion)" />
+    <PackageReference Include="ModelPackages" Version="$(ModelPackagesVersion)" />
+    <PackageReference Include="MLNet.AudioInference.Onnx" Version="$(MLNetAudioInferenceVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="SMART_TOOL.md" />
+  </ItemGroup>
+
+</Project>

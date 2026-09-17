@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>audio-transcriber</AssemblyName>
+    <RootNamespace>AudioTranscriber.Cli</RootNamespace>
+    <PackAsTool>true</PackAsTool>
+    <PackageId>audio-transcriber</PackageId>
+    <Version>0.1.0</Version>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <ToolCommandName>audio-transcriber</ToolCommandName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AudioTranscriber\AudioTranscriber.csproj" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="README.md" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,9 @@
+{
+  "manifest": "src/AudioTranscriber/SMART_TOOL.md",
+  "cli_argv": [
+    "audio-transcriber"
+  ],
+  "deterministic_smoke": [
+    "manifest"
+  ]
+}
