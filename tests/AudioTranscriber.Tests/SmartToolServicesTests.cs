@@ -42,6 +42,9 @@ public sealed class SmartToolServicesTests
         Assert.Equal("<repository>", report.RepositoryRoot);
         Assert.Equal("<model-cache>", report.ModelCacheDirectory);
         Assert.Contains(report.Checks, check => check.Name == "whisper-net" && check.Status == "pass");
+        Assert.Contains(
+            report.Checks,
+            check => check.Name == "ffmpeg" && (check.Status == "pass" || check.Status == "blocked"));
         Assert.Contains(report.Checks, check => check.Name == "whisper-model-garden" && check.Status == "blocked");
     }
 
@@ -91,13 +94,14 @@ public sealed class SmartToolServicesTests
                     "name: audio-transcriber",
                     "version: 0.1.0",
                     "description: >",
-                    "  Validate local 16 kHz mono WAV recordings and run local Whisper Base",
-                    "  transcription with deterministic timestamped transcript renderers.",
+                    "  Convert local audio explicitly to the transcription contract and run local",
+                    "  Whisper Base transcription with deterministic timestamped transcript renderers.",
                     "use_cases:",
+                    "  - Convert local audio through external FFmpeg into 16 kHz mono 16-bit PCM WAV",
                     "  - Validate local WAV inputs against the supported 16 kHz mono contract",
                     "  - Transcribe local speech with real timestamped Whisper Base segments",
                     "  - Render typed transcripts as text, JSON, SRT, or WebVTT",
-                    "  - Inspect deterministic model, cache, and package integration readiness",
+                    "  - Inspect deterministic model, cache, FFmpeg, and package integration readiness",
                     "platforms:",
                     "  - windows"
                 ]),
@@ -113,14 +117,15 @@ public sealed class SmartToolServicesTests
         Assert.Equal("audio-transcriber", manifest.Name);
         Assert.Equal("0.1.0", manifest.Version);
         Assert.Equal(
-            "Validate local 16 kHz mono WAV recordings and run local Whisper Base transcription with deterministic timestamped transcript renderers.",
+            "Convert local audio explicitly to the transcription contract and run local Whisper Base transcription with deterministic timestamped transcript renderers.",
             manifest.Description);
         Assert.Equal(
             [
+                "Convert local audio through external FFmpeg into 16 kHz mono 16-bit PCM WAV",
                 "Validate local WAV inputs against the supported 16 kHz mono contract",
                 "Transcribe local speech with real timestamped Whisper Base segments",
                 "Render typed transcripts as text, JSON, SRT, or WebVTT",
-                "Inspect deterministic model, cache, and package integration readiness"
+                "Inspect deterministic model, cache, FFmpeg, and package integration readiness"
             ],
             manifest.UseCases);
         Assert.Equal(["windows"], manifest.Platforms);
@@ -136,12 +141,13 @@ public sealed class SmartToolServicesTests
                     "  \"smartToolFormat\": 1,",
                     "  \"name\": \"audio-transcriber\",",
                     "  \"version\": \"0.1.0\",",
-                    "  \"description\": \"Validate local 16 kHz mono WAV recordings and run local Whisper Base transcription with deterministic timestamped transcript renderers.\",",
+                    "  \"description\": \"Convert local audio explicitly to the transcription contract and run local Whisper Base transcription with deterministic timestamped transcript renderers.\",",
                     "  \"useCases\": [",
+                    "    \"Convert local audio through external FFmpeg into 16 kHz mono 16-bit PCM WAV\",",
                     "    \"Validate local WAV inputs against the supported 16 kHz mono contract\",",
                     "    \"Transcribe local speech with real timestamped Whisper Base segments\",",
                     "    \"Render typed transcripts as text, JSON, SRT, or WebVTT\",",
-                    "    \"Inspect deterministic model, cache, and package integration readiness\"",
+                    "    \"Inspect deterministic model, cache, FFmpeg, and package integration readiness\"",
                     "  ],",
                     "  \"platforms\": [",
                     "    \"windows\"",
