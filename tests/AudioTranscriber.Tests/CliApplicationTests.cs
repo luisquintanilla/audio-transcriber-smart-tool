@@ -28,6 +28,7 @@ public sealed class CliApplicationTests
         Assert.Equal(0, exitCode);
         Assert.Contains("smart_tool_format: 1", output.ToString());
         Assert.Contains("name: audio-transcriber", output.ToString());
+        Assert.Contains("Produce source-linked timestamped chapters", output.ToString());
         Assert.Contains("## Model integration status", output.ToString());
     }
 
@@ -59,6 +60,7 @@ public sealed class CliApplicationTests
         Assert.Contains("Introspection and diagnostics:", shortOutput.ToString());
         Assert.Contains("Audio processing:", shortOutput.ToString());
         Assert.Contains("Speech recognition:", shortOutput.ToString());
+        Assert.Contains("Transcript processing:", shortOutput.ToString());
         Assert.DoesNotContain("status", shortOutput.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("## Arguments", shortOutput.ToString());
         Assert.Contains("<skill_content name=\"audio-transcriber\">", fullOutput.ToString());
@@ -72,6 +74,7 @@ public sealed class CliApplicationTests
     [InlineData("doctor")]
     [InlineData("convert")]
     [InlineData("transcribe")]
+    [InlineData("chapters")]
     public async Task Every_capability_supports_short_and_full_help(string capabilityName)
     {
         var shortOutput = new StringWriter();

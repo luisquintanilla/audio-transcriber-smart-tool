@@ -8,7 +8,8 @@ public static class SmartToolHelpRenderer
     [
         ("Introspection and diagnostics", ["manifest", "doctor"]),
         ("Audio processing", ["convert"]),
-        ("Speech recognition", ["transcribe"])
+        ("Speech recognition", ["transcribe"]),
+        ("Transcript processing", ["chapters"])
     ];
 
     public static string RenderShortHelp()

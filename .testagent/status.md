@@ -151,3 +151,15 @@ by this PR:
   `Microsoft.ML.Tokenizers` 2.0.0, and `System.Numerics.Tensors` 10.0.12;
   the standard AI abstraction is a direct vendored project dependency and no
   ML.NET package was added.
+
+# Production chapters follow-up status
+
+The owning branch is rebased onto PR #9 head
+`ed2fe27d1e38b8242d9f794c3b07c68d443bc037`. The canonical lower-layer
+DataIngestion and `IEmbeddingGenerator<TextContent, Embedding<float>>`
+contracts are preserved.
+
+The identical input/output path review is valid. The guard is implemented at
+the CLI boundary before overwrite checks and input reads, with regression
+coverage for both default and `--overwrite` modes. No lower PR files or
+abstractions were changed.

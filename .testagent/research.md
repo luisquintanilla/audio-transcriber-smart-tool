@@ -158,3 +158,13 @@ packages. Granite keeps a narrow `IGraniteTokenizer` and
 SentencePiece, and uses ONNX Runtime `DenseTensor<long>` only at the ONNX
 interop boundary. `System.Numerics.Tensors.TensorPrimitives` supplies L2 norm
 and division for normalized vectors.
+
+# Production chapters follow-up research
+
+PR review identified a destructive collision: `chapters --input X --output X
+--overwrite` could read the transcript and replace it with its chapter
+artifact. The existing conversion boundary already rejects normalized
+same-file input/output paths. The correct smallest fix is the equivalent guard
+in `CliApplication.ChaptersAsync`, before overwrite checking and before reading
+the input; no changes to lower DataIngestion or embedding contracts are
+needed.

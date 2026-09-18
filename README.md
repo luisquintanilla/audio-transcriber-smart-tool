@@ -296,8 +296,15 @@ keeps only the transcript-specific orchestration around canonical elements.
 
 `TranscriptChapterArtifactGenerator` projects non-gap windows into an ordered,
 versioned `TranscriptChapterArtifactDocument` and provides deterministic JSON
-serialization. No embedding implementation, model asset, network dependency,
-CLI capability, or Smart Tool manifest entry is required.
+serialization with source-linked boundary metadata, gap metadata, and
+generation configuration. The production `TranscriptChapterGenerator` and
+`TranscriptChapterArtifactFileWriter` compose these contracts for the
+`chapters` capability. The default provider is deterministic and offline.
+`chapters --provider granite` is an explicit opt-in that validates the pinned
+external Granite model and tokenizer assets before generating; it never falls
+back to a different provider. Output refuses accidental overwrite unless
+`--overwrite` is supplied and is committed with a temporary-file/atomic-move
+write.
 
 ### Deterministic chapter evaluation harness
 
