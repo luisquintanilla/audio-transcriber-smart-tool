@@ -97,7 +97,7 @@ $installDirectory = Join-Path $env:TEMP ("audio-transcriber-install-" + [guid]::
 dotnet new tool-manifest --output $installDirectory
 Push-Location $installDirectory
 dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
-dotnet tool run audio-transcriber --help
+dotnet tool run audio-transcriber -- --help
 Pop-Location
 ```
 

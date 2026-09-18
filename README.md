@@ -85,7 +85,7 @@ try {
     # Skip this command if the directory already has a tool manifest.
     dotnet new tool-manifest
     dotnet tool install audio-transcriber --version 0.1.0 --configfile .\NuGet.GitHub.config
-    dotnet tool run audio-transcriber --help
+    dotnet tool run audio-transcriber -- --help
 } finally {
     Remove-Item Env:NuGetPackageSourceCredentials_github
 }
@@ -95,6 +95,10 @@ This separate config is for installing the tool package, which bundles its
 NuGet dependencies, not restoring the source solution. The ordinary `NuGet.config`
 remains unchanged so source builds do not require GitHub credentials.
 The tool is framework-dependent and requires .NET 10.
+
+Use the `--` separator when forwarding `--help` to a local tool; otherwise the
+.NET 10 SDK prints its own `dotnet tool run` help. The README embedded in the
+initial `0.1.0` package omits this separator; use the corrected commands here.
 
 For maintainers, pack the CLI project as shown below and push only the resulting
 `audio-transcriber.0.1.0.nupkg` to the feed above using securely configured local
@@ -117,7 +121,7 @@ New-Item -ItemType Directory -Path $installDirectory | Out-Null
 dotnet new tool-manifest --output $installDirectory
 Push-Location $installDirectory
 dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
-dotnet tool run audio-transcriber --help
+dotnet tool run audio-transcriber -- --help
 dotnet tool run audio-transcriber manifest
 dotnet tool run audio-transcriber doctor
 dotnet tool run audio-transcriber convert --input .\source.audio --output .\speech.wav
