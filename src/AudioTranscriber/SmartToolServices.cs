@@ -187,6 +187,13 @@ public static class SmartToolManifestService
 
 public sealed class DoctorService
 {
+    private readonly IFfmpegExecutableResolver _ffmpegResolver;
+
+    public DoctorService(IFfmpegExecutableResolver? ffmpegResolver = null)
+    {
+        _ffmpegResolver = ffmpegResolver ?? new FfmpegExecutableResolver();
+    }
+
     public DoctorReport Run(string repositoryRoot, string? modelCacheDirectory = null)
     {
         if (string.IsNullOrWhiteSpace(repositoryRoot))
@@ -197,6 +204,7 @@ public sealed class DoctorService
         var fullRepositoryRoot = Path.GetFullPath(repositoryRoot);
         var cacheDirectory = Path.GetFullPath(modelCacheDirectory ?? SmartToolPaths.DefaultModelCacheDirectory);
         var cacheOutsideRepository = SmartToolPaths.IsOutsideRepository(fullRepositoryRoot, cacheDirectory);
+        var ffmpeg = _ffmpegResolver.Resolve(null);
 
         var checks = new[]
         {
@@ -210,6 +218,12 @@ public sealed class DoctorService
                 "whisper-net",
                 "pass",
                 $"Whisper.net {WhisperNetIntegration.PackageVersion} is configured for {WhisperNetIntegration.ModelId} ({WhisperNetIntegration.ModelVersion}); model downloads are verified outside the repository."),
+            new IntegrationCheck(
+                "ffmpeg",
+                ffmpeg.IsAvailable ? "pass" : "blocked",
+                ffmpeg.IsAvailable
+                    ? $"{ffmpeg.Detail} The convert command can prepare audio for transcription."
+                    : $"{ffmpeg.Detail} The convert command requires this external prerequisite; no binary is downloaded."),
             new IntegrationCheck(
                 "whisper-model-garden",
                 "blocked",

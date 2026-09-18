@@ -7,11 +7,16 @@ public sealed class CliApplication
 {
     private readonly ITranscriptionEngine _engine;
     private readonly WavAudioReader _audioReader;
+    private readonly IAudioConversionService _conversionService;
 
-    public CliApplication(ITranscriptionEngine? engine = null, WavAudioReader? audioReader = null)
+    public CliApplication(
+        ITranscriptionEngine? engine = null,
+        WavAudioReader? audioReader = null,
+        IAudioConversionService? conversionService = null)
     {
         _engine = engine ?? new WhisperNetEngine();
         _audioReader = audioReader ?? new WavAudioReader();
+        _conversionService = conversionService ?? new AudioConversionService();
     }
 
     public async Task<int> RunAsync(
@@ -49,6 +54,9 @@ public sealed class CliApplication
                 "transcribe" when args.Length == 2 && (args[1] is "-h" or "--help") =>
                     await WriteTranscribeHelpAsync(output).ConfigureAwait(false),
                 "transcribe" => await TranscribeAsync(args[1..], output, error, cancellationToken).ConfigureAwait(false),
+                "convert" when args.Length == 2 && (args[1] is "-h" or "--help") =>
+                    await WriteConvertHelpAsync(output).ConfigureAwait(false),
+                "convert" => await ConvertAsync(args[1..], output, error, cancellationToken).ConfigureAwait(false),
                 _ => await WriteUsageErrorAsync(error).ConfigureAwait(false)
             };
         }
@@ -108,6 +116,21 @@ public sealed class CliApplication
         return 0;
     }
 
+    private static async Task<int> WriteConvertHelpAsync(TextWriter output)
+    {
+        await output.WriteLineAsync(
+            """
+            Convert local audio through an external FFmpeg executable into a 16 kHz mono 16-bit PCM WAV.
+
+            Usage:
+              audio-transcriber convert --input <path> --output <file.wav> [--ffmpeg <path>] [--force]
+
+            The input is preserved. Existing output files are not overwritten unless --force is provided.
+            FFmpeg is resolved from PATH unless --ffmpeg supplies an executable path.
+            """).ConfigureAwait(false);
+        return 0;
+    }
+
     private static async Task<int> WriteDoctorAsync(TextWriter output, string repositoryRoot)
     {
         var report = new DoctorService().Run(repositoryRoot);
@@ -155,6 +178,28 @@ public sealed class CliApplication
             }
         }
 
+        return 0;
+    }
+
+    private async Task<int> ConvertAsync(
+        string[] args,
+        TextWriter output,
+        TextWriter error,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseConvertOptions(args, out var options, out var parseError))
+        {
+            await error.WriteLineAsync($"error: {parseError}").ConfigureAwait(false);
+            return 2;
+        }
+
+        var result = await _conversionService
+            .ConvertAsync(options, cancellationToken)
+            .ConfigureAwait(false);
+        await output.WriteLineAsync(
+            $"Converted '{SafePathDisplay.Basename(result.InputPath)}' to " +
+            $"'{SafePathDisplay.Basename(result.OutputPath)}' as " +
+            $"{result.SampleRate} Hz mono {result.BitsPerSample}-bit PCM WAV.").ConfigureAwait(false);
         return 0;
     }
 
@@ -219,6 +264,83 @@ public sealed class CliApplication
         return true;
     }
 
+    private static bool TryParseConvertOptions(
+        string[] args,
+        out AudioConversionOptions options,
+        out string error)
+    {
+        string? input = null;
+        string? output = null;
+        string? ffmpeg = null;
+        var force = false;
+
+        for (var index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--input":
+                    if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+                    {
+                        options = default!;
+                        error = "--input requires an audio path.";
+                        return false;
+                    }
+
+                    input = args[index];
+                    break;
+                case "--output":
+                    if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+                    {
+                        options = default!;
+                        error = "--output requires a WAV path.";
+                        return false;
+                    }
+
+                    output = args[index];
+                    break;
+                case "--ffmpeg":
+                    if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+                    {
+                        options = default!;
+                        error = "--ffmpeg requires an executable path.";
+                        return false;
+                    }
+
+                    ffmpeg = args[index];
+                    break;
+                case "--force":
+                    force = true;
+                    break;
+                default:
+                    options = default!;
+                    error = $"Unknown convert option: {args[index]}";
+                    return false;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            options = default!;
+            error = "A --input audio path is required.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            options = default!;
+            error = "A --output WAV path is required.";
+            return false;
+        }
+
+        options = new AudioConversionOptions(input, output)
+        {
+            FfmpegPath = ffmpeg,
+            Force = force
+        };
+        error = string.Empty;
+        return true;
+    }
+
     private static async Task<int> WriteUsageErrorAsync(TextWriter error)
     {
         await error.WriteLineAsync(Usage()).ConfigureAwait(false);
@@ -232,6 +354,7 @@ public sealed class CliApplication
           audio-transcriber manifest
           audio-transcriber status
           audio-transcriber doctor
+          audio-transcriber convert --input <path> --output <file.wav> [--ffmpeg <path>] [--force]
           audio-transcriber transcribe --input <file.wav> [--input <file.wav>] [--format text|json|srt|webvtt] [--output <path>]
         """;
 

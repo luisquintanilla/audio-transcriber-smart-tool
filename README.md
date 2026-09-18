@@ -1,6 +1,6 @@
 # Audio transcriber Smart Tool
 
-A .NET 10 library-first Smart Tool for local, batch transcription of 16 kHz mono WAV files. The `AudioTranscriber` library owns the domain behavior; `audio-transcriber` is only a non-interactive CLI shell.
+A .NET 10 library-first Smart Tool for explicit local audio conversion and batch transcription of 16 kHz mono WAV files. The `AudioTranscriber` library owns the domain behavior; `audio-transcriber` is only a non-interactive CLI shell.
 
 See [`src/AudioTranscriber/SMART_TOOL.md`](src/AudioTranscriber/SMART_TOOL.md) for the scope, commands, Whisper.net provenance, cache policy, and the optional Model Garden package status.
 
@@ -31,6 +31,7 @@ dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirec
 dotnet tool run audio-transcriber manifest
 dotnet tool run audio-transcriber status
 dotnet tool run audio-transcriber doctor
+dotnet tool run audio-transcriber convert --input .\source.audio --output .\speech.wav
 dotnet tool run audio-transcriber transcribe --input $env:TEMP\audio-transcriber-jfk.wav --format json
 Pop-Location
 ```
@@ -47,8 +48,13 @@ The first transcription requires network access to download the pinned
 `sandrohanea/whisper.net` artifact and stores it under the platform's external
 user cache (`%LOCALAPPDATA%\AudioTranscriber\model-cache` on Windows). Existing
 cache files are hash-verified. The commands above assume a local 16 kHz mono
-speech WAV at `$env:TEMP\audio-transcriber-jfk.wav`; FFmpeg conversion is not
-part of this tool. Transcript renderers expose only the input basename (for
+speech WAV at `$env:TEMP\audio-transcriber-jfk.wav`. The explicit `convert`
+command uses an external `ffmpeg` executable resolved from `PATH`, or from
+`--ffmpeg <path>`, and writes 16 kHz mono 16-bit PCM WAV without modifying its
+source. It never downloads or bundles FFmpeg and refuses to overwrite an
+existing output unless `--force` is supplied. Source formats are limited to
+what the installed FFmpeg executable can decode; no particular container or
+codec is promised. Transcript renderers expose only the input basename (for
 example, `speech.wav`) rather than the absolute input path. Doctor output and
 CLI/model errors use safe tokens such as `<repository>`, `<model-cache>`, and
 `<model-file>` instead of local absolute paths.

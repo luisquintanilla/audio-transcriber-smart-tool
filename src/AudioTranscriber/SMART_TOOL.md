@@ -3,13 +3,14 @@ smart_tool_format: 1
 name: audio-transcriber
 version: 0.1.0
 description: >
-  Validate local 16 kHz mono WAV recordings and run local Whisper Base
-  transcription with deterministic timestamped transcript renderers.
+  Convert local audio explicitly to the transcription contract and run local
+  Whisper Base transcription with deterministic timestamped transcript renderers.
 use_cases:
+  - Convert local audio through external FFmpeg into 16 kHz mono 16-bit PCM WAV
   - Validate local WAV inputs against the supported 16 kHz mono contract
   - Transcribe local speech with real timestamped Whisper Base segments
   - Render typed transcripts as text, JSON, SRT, or WebVTT
-  - Inspect deterministic model, cache, and package integration readiness
+  - Inspect deterministic model, cache, FFmpeg, and package integration readiness
 platforms:
   - windows
 ---
@@ -25,16 +26,18 @@ and doctor behavior live in `AudioTranscriber`.
 
 - WAV-first local batch input.
 - 16 kHz, mono PCM WAV is required.
+- Explicit conversion to 16 kHz, mono, 16-bit PCM WAV through external FFmpeg.
 - Whisper Base is the default model target.
 - Real timestamped typed transcript segments.
 - Text, JSON, SRT, and WebVTT renderers.
 - Deterministic `manifest` and `doctor` commands.
 - Explicit non-interactive failures.
 
-The tool deliberately does not implement summaries, diarization, streaming,
-remote providers, or FFmpeg conversion. `manifest` emits this canonical
-document from the packaged library. The separate `status` command emits
-deterministic machine-readable frontmatter status JSON.
+The tool deliberately does not implement summaries, diarization, streaming, or
+remote providers. Conversion is explicit and never happens implicitly inside
+`transcribe`. `manifest` emits this canonical document from the packaged
+library. The separate `status` command emits deterministic machine-readable
+frontmatter status JSON.
 
 ## Catalog readiness
 
@@ -49,6 +52,7 @@ SHA-256, and stored outside the repository.
 audio-transcriber manifest
 audio-transcriber status
 audio-transcriber doctor
+audio-transcriber convert --input .\source.audio --output .\speech.wav
 audio-transcriber transcribe --input .\speech.wav --format json
 ```
 
@@ -59,6 +63,19 @@ are reported explicitly rather than producing degraded or fabricated output.
 Transcript renderers expose only input basenames, not absolute local paths.
 Doctor output and CLI/model errors use safe path tokens such as
 `<repository>`, `<model-cache>`, and `<model-file>`.
+
+## Audio conversion
+
+`convert` preserves its input and writes a WAV file with the transcription
+contract: 16,000 Hz, mono, 16-bit PCM. It requires both `--input` and
+`--output`, refuses to overwrite an existing output unless `--force` is
+provided, and reports conversion and output-validation failures explicitly.
+
+Conversion uses an external `ffmpeg` executable. The tool first looks for
+`ffmpeg` on `PATH`; `--ffmpeg <path>` can select a specific executable. No
+native binaries are bundled and no binaries are downloaded. Source formats are
+therefore limited to formats supported by the installed FFmpeg executable; the
+tool does not promise support for any particular container or codec.
 
 ## Distribution smoke
 
@@ -188,5 +205,6 @@ path.
 
 Model caches resolve under `%LOCALAPPDATA%\AudioTranscriber\model-cache` on
 Windows (or the platform equivalent), never in the repository. `doctor`
-reports the resolved path, the available Whisper.net backend, and the optional
-Model Garden package/API status without attempting downloads.
+reports the resolved path, the available Whisper.net backend, the FFmpeg
+prerequisite, and the optional Model Garden package/API status without
+attempting downloads.
