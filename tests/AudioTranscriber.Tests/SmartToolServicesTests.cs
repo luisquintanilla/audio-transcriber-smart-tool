@@ -143,7 +143,7 @@ public sealed class SmartToolServicesTests
         var readme = File.ReadAllText(Path.Combine(root, "README.md"));
 
         Assert.Contains("<PackAsTool>true</PackAsTool>", project);
-        Assert.Contains("<Version>0.1.0</Version>", project);
+        Assert.Contains("<Version>0.1.1</Version>", project);
         Assert.Contains("PackagePath=\"src\\AudioTranscriber\\SMART_TOOL.md\"", project);
         Assert.Contains("PackagePath=\"smart-tool.json\"", project);
         Assert.Contains("does not consume a Git URL directly", readme);
@@ -200,8 +200,8 @@ public sealed class SmartToolServicesTests
 
         Assert.Equal(embedded, SmartToolManifestService.Markdown());
         Assert.Equal(embedded, SmartToolManifestService.Create().Markdown);
-        Assert.Equal("0.1.0", SmartToolManifestService.Create().Version);
-        Assert.Equal(new Version(0, 1, 0, 0), assembly.GetName().Version);
+        Assert.Equal("0.1.1", SmartToolManifestService.Create().Version);
+        Assert.Equal(new Version(0, 1, 1, 0), assembly.GetName().Version);
     }
 
     [Fact]
@@ -279,7 +279,7 @@ public sealed class SmartToolServicesTests
                     "---",
                     "smart_tool_format: 1",
                     "name: audio-transcriber",
-                    "version: 0.1.0",
+                    "version: 0.1.1",
                     "description: >",
                     "  Prepare local audio for Whisper transcription and run timestamped local",
                     "  speech recognition with explicit deterministic conversion and diagnostics.",
@@ -311,7 +311,7 @@ public sealed class SmartToolServicesTests
 
         Assert.Equal(1, manifest.SmartToolFormat);
         Assert.Equal("audio-transcriber", manifest.Name);
-        Assert.Equal("0.1.0", manifest.Version);
+        Assert.Equal("0.1.1", manifest.Version);
         Assert.Equal(
             "Prepare local audio for Whisper transcription and run timestamped local speech recognition with explicit deterministic conversion and diagnostics.",
             manifest.Description);

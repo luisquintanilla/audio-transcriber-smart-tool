@@ -6,7 +6,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>true</IsPackable>
     <PackageId>AudioTranscriber</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>luisquintanilla</Authors>
     <Description>Typed .NET APIs for local audio preparation, Whisper speech transcription, and Smart Tool introspection.</Description>
     <RepositoryUrl>https://github.com/luisquintanilla/audio-transcriber-smart-tool</RepositoryUrl>

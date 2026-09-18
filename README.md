@@ -53,8 +53,8 @@ nuget.org or the shared Smart Tools Catalog:
 
 | Package ID | Version | Consumption |
 | --- | --- | --- |
-| `audio-transcriber` | `0.1.0` | CLI: `dotnet tool install` |
-| `AudioTranscriber` | `0.1.0` | Library: ordinary `PackageReference` |
+| `audio-transcriber` | `0.1.1` | CLI: `dotnet tool install` |
+| `AudioTranscriber` | `0.1.1` | Library: ordinary `PackageReference` |
 
 Both use `https://nuget.pkg.github.com/luisquintanilla/index.json`.
 The hyphen distinguishes these IDs; NuGet package IDs are case-insensitive.
@@ -89,7 +89,7 @@ $env:NuGetPackageSourceCredentials_github = "Username=$env:GITHUB_PACKAGES_USERN
 try {
     # Skip this command if the directory already has a tool manifest.
     dotnet new tool-manifest
-    dotnet tool install audio-transcriber --version 0.1.0 --configfile .\NuGet.GitHub.config
+    dotnet tool install audio-transcriber --version 0.1.1 --configfile .\NuGet.GitHub.config
     dotnet tool run audio-transcriber -- --help
 } finally {
     Remove-Item Env:NuGetPackageSourceCredentials_github
@@ -103,12 +103,13 @@ The tool is framework-dependent and requires .NET 10.
 
 Use the `--` separator when forwarding `--help` to a local tool; otherwise the
 .NET 10 SDK prints its own `dotnet tool run` help. The README embedded in the
-initial `0.1.0` package omits this separator; use the corrected commands here.
+initial `audio-transcriber` `0.1.0` package omits this separator; `0.1.1`
+ships the corrected commands shown here.
 
 For maintainers, pack the appropriate project and publish only its new artifact
 to the feed above using securely configured local credentials with
-`write:packages`. The existing `audio-transcriber` 0.1.0 release is immutable:
-packing it for validation is not permission to republish it. A newly published
+`write:packages`. Both existing 0.1.0 package releases are immutable:
+packing them for validation is not permission to republish them. A newly published
 GitHub package defaults to private; its owner must explicitly make each package
 public in **Package settings** and verify visibility. Linking the public
 repository does not make either package public. Publication is manual; no CI
@@ -120,7 +121,7 @@ In a .NET 10 application, reference the **library**, not the tool:
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="AudioTranscriber" Version="0.1.0" />
+  <PackageReference Include="AudioTranscriber" Version="0.1.1" />
 </ItemGroup>
 ```
 
@@ -211,7 +212,7 @@ $installDirectory = Join-Path $env:TEMP ("audio-transcriber-install-" + [guid]::
 New-Item -ItemType Directory -Path $installDirectory | Out-Null
 dotnet new tool-manifest --output $installDirectory
 Push-Location $installDirectory
-dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
+dotnet tool install audio-transcriber --version 0.1.1 --add-source $packageDirectory
 dotnet tool run audio-transcriber -- --help
 dotnet tool run audio-transcriber manifest
 dotnet tool run audio-transcriber doctor

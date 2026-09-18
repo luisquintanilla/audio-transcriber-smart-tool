@@ -1,7 +1,7 @@
 ---
 smart_tool_format: 1
 name: audio-transcriber
-version: 0.1.0
+version: 0.1.1
 description: >
   Prepare local audio for Whisper transcription and run timestamped local
   speech recognition with explicit deterministic conversion and diagnostics.
@@ -96,7 +96,7 @@ $packageDirectory = (Resolve-Path .\artifacts\tool).Path
 $installDirectory = Join-Path $env:TEMP ("audio-transcriber-install-" + [guid]::NewGuid().ToString("N"))
 dotnet new tool-manifest --output $installDirectory
 Push-Location $installDirectory
-dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
+dotnet tool install audio-transcriber --version 0.1.1 --add-source $packageDirectory
 dotnet tool run audio-transcriber -- --help
 Pop-Location
 ```
@@ -104,7 +104,7 @@ Pop-Location
 Git source checkout and local package installation remain supported. The
 temporary distribution target is the owner's GitHub Packages NuGet feed,
 `https://nuget.pkg.github.com/luisquintanilla/index.json`, for package
-`audio-transcriber` version `0.1.0`, not nuget.org or the shared catalog.
+`audio-transcriber` version `0.1.1`, not nuget.org or the shared catalog.
 Even public GitHub NuGet packages require authenticated installation with
 `read:packages`. See the repository README's GitHub Packages installation
 section for a separate feed config and process-scoped credentials; source
@@ -115,7 +115,7 @@ model binaries or FFmpeg binaries are packaged. Replace the local
 
 ## Typed library installation
 
-The companion `AudioTranscriber` NuGet package, version `0.1.0`, is the normal
+The companion `AudioTranscriber` NuGet package, version `0.1.1`, is the normal
 .NET 10 library dependency. Use `PackageReference` to `AudioTranscriber` for
 typed APIs; `audio-transcriber` (with a hyphen) is a separate CLI tool package,
 not an application dependency. Both target the owner's GitHub Packages feed.
