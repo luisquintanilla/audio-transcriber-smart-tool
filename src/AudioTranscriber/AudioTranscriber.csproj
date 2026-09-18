@@ -4,6 +4,15 @@
     <AssemblyName>AudioTranscriber</AssemblyName>
     <RootNamespace>AudioTranscriber</RootNamespace>
     <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackageId>AudioTranscriber</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>luisquintanilla</Authors>
+    <Description>Typed .NET APIs for local audio preparation, Whisper speech transcription, and Smart Tool introspection.</Description>
+    <RepositoryUrl>https://github.com/luisquintanilla/audio-transcriber-smart-tool</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/luisquintanilla/audio-transcriber-smart-tool</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -16,7 +25,7 @@
 
   <ItemGroup>
     <PackageReference Include="Whisper.net" Version="1.9.0" />
-    <PackageReference Include="Whisper.net.Runtime" Version="1.9.0" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.0" PrivateAssets="none" />
   </ItemGroup>
 
   <!-- Opt in explicitly. This is intentionally disabled for the deterministic default build. -->
@@ -28,6 +37,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="SMART_TOOL.md" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="README.md" />
+    <None Update="SMART_TOOL.md" Pack="true" PackagePath="src\AudioTranscriber\SMART_TOOL.md" />
   </ItemGroup>
 
 </Project>
