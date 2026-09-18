@@ -147,7 +147,10 @@ public sealed class SmartToolServicesTests
         Assert.Contains("PackagePath=\"src\\AudioTranscriber\\SMART_TOOL.md\"", project);
         Assert.Contains("PackagePath=\"smart-tool.json\"", project);
         Assert.Contains("does not consume a Git URL directly", readme);
-        Assert.Contains("does not assume or claim publication to a public NuGet feed", readme);
+        Assert.Contains("<RepositoryUrl>https://github.com/luisquintanilla/audio-transcriber-smart-tool</RepositoryUrl>", project);
+        Assert.Contains("Git installation remains supported", readme);
+        Assert.Contains("https://nuget.pkg.github.com/luisquintanilla/index.json", readme);
+        Assert.Contains("GitHub requires authentication even for public NuGet packages", readme);
     }
 
     [Fact]

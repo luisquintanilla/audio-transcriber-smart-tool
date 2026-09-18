@@ -22,10 +22,13 @@ validation is documented in `SMART_TOOL.md`.
 
 ## Source checkout
 
-`dotnet tool install` does not consume a Git URL directly. From a source
-checkout, restore and launch the PackAsTool project explicitly:
+Git installation remains supported independently of any package feed.
+`dotnet tool install` does not consume a Git URL directly. Clone the repository,
+then restore and launch the PackAsTool project explicitly:
 
 ```powershell
+git clone https://github.com/luisquintanilla/audio-transcriber-smart-tool.git
+Set-Location .\audio-transcriber-smart-tool
 dotnet restore .\AudioTranscriber.sln
 dotnet run --project .\src\audio-transcriber\audio-transcriber.csproj --no-restore -- --help
 ```
@@ -42,6 +45,63 @@ The introspection and diagnostics commands have distinct roles:
 
 - `manifest` prints the canonical manifest document.
 - `doctor` reports cache and integration readiness without downloading a model.
+
+## GitHub Packages installation
+
+The temporary package distribution target is **GitHub Packages**, not
+nuget.org or the shared Smart Tools Catalog:
+
+- Package ID: `audio-transcriber`
+- Version: `0.1.0`
+- Feed: `https://nuget.pkg.github.com/luisquintanilla/index.json`
+
+GitHub requires authentication even for public NuGet packages. Use a personal
+access token (classic) with `read:packages`, supplied securely to the current
+process as `GITHUB_PACKAGES_TOKEN`, and your GitHub login as
+`GITHUB_PACKAGES_USERNAME`. Do not put tokens in commands, source control, or
+chat. See [GitHub's NuGet authentication guidance](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-nuget-registry).
+
+Use the repository's `NuGet.GitHub.config`, or save the following as
+`NuGet.GitHub.config` in any installation directory (no Git checkout required):
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="github" value="https://nuget.pkg.github.com/luisquintanilla/index.json" />
+  </packageSources>
+</configuration>
+```
+
+Install into a local tool manifest using only that feed:
+
+```powershell
+if (-not $env:GITHUB_PACKAGES_TOKEN -or -not $env:GITHUB_PACKAGES_USERNAME) {
+    throw "Set GITHUB_PACKAGES_TOKEN and GITHUB_PACKAGES_USERNAME securely before installing."
+}
+$env:NuGetPackageSourceCredentials_github = "Username=$env:GITHUB_PACKAGES_USERNAME;Password=$env:GITHUB_PACKAGES_TOKEN;ValidAuthenticationTypes=Basic"
+try {
+    # Skip this command if the directory already has a tool manifest.
+    dotnet new tool-manifest
+    dotnet tool install audio-transcriber --version 0.1.0 --configfile .\NuGet.GitHub.config
+    dotnet tool run audio-transcriber --help
+} finally {
+    Remove-Item Env:NuGetPackageSourceCredentials_github
+}
+```
+
+This separate config is for installing the tool package, which bundles its
+NuGet dependencies, not restoring the source solution. The ordinary `NuGet.config`
+remains unchanged so source builds do not require GitHub credentials.
+The tool is framework-dependent and requires .NET 10.
+
+For maintainers, pack the CLI project as shown below and push only the resulting
+`audio-transcriber.0.1.0.nupkg` to the feed above using securely configured local
+credentials with `write:packages`. A newly published GitHub package defaults to
+private; its owner must explicitly make it public in **Package settings** and
+verify visibility. Linking the public repository does not make the package public.
+Publication is manual; no CI publishing workflow is provided.
 
 ## Clean local-tool installation
 
@@ -65,8 +125,8 @@ dotnet tool run audio-transcriber transcribe --input $env:TEMP\audio-transcriber
 Pop-Location
 ```
 
-The repository documents source checkout and local package installation; it
-does not assume or claim publication to a public NuGet feed. A .NET 10 SDK is
+Source checkout and local package installation remain available without
+GitHub Packages authentication. A .NET 10 SDK is
 required for restore, build, test, and packing. `dotnetup` is an optional SDK
 manager, not a launcher dependency; when available, use
 `dotnetup sdk install 10.0`.

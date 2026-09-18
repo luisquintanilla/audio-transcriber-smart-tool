@@ -101,8 +101,14 @@ dotnet tool run audio-transcriber --help
 Pop-Location
 ```
 
-The repository documents source checkout and local package installation; it
-does not assume or claim publication to a public NuGet feed. The `.nupkg`
+Git source checkout and local package installation remain supported. The
+temporary distribution target is the owner's GitHub Packages NuGet feed,
+`https://nuget.pkg.github.com/luisquintanilla/index.json`, for package
+`audio-transcriber` version `0.1.0`, not nuget.org or the shared catalog.
+Even public GitHub NuGet packages require authenticated installation with
+`read:packages`. See the repository README's GitHub Packages installation
+section for a separate feed config and process-scoped credentials; source
+restore does not require GitHub Packages credentials. The `.nupkg`
 contains the library, the canonical `SMART_TOOL.md`, and `smart-tool.json`; no
 model binaries or FFmpeg binaries are packaged. Replace the local
 `--add-source` path with another checkout's package directory when needed.
