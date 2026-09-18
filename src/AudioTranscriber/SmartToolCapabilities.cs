@@ -219,6 +219,66 @@ public static class SmartToolCapabilityRegistry
             inference failures return a non-zero error. The command never falls
             back to fabricated or degraded deterministic text and never prompts.
             """
+        ),
+        new(
+            "chapters",
+            SmartToolCapabilityKind.Deterministic,
+            "Generate timestamped chapters from an existing transcript JSON document.",
+            $"{SmartToolPaths.ToolId} chapters --input <transcript.json> --output <chapters.json> [--provider deterministic|granite] [--min-duration <seconds>] [--max-duration <seconds>] [--overwrite]",
+            """
+            # audio-transcriber chapters
+
+            ## When to use
+
+            Use this capability when a validated, timestamped transcript JSON
+            document already exists and downstream software needs ordered chapter
+            boundaries and source-linked text. This command does not run Whisper,
+            convert audio, call an LLM, or generate summaries.
+
+            ## Determinism
+
+            The default `deterministic` provider uses only source segment timing,
+            text, IDs, and the configured duration bounds. It does not download
+            models or use the network. `granite` is an explicit optional provider
+            selection; it requires the pinned external Granite assets and fails
+            clearly when they are missing or incompatible.
+
+            ## Arguments
+
+            - `--input <transcript.json>` is one existing timestamped transcript
+              JSON document and is required.
+            - `--output <chapters.json>` is the destination artifact and is
+              required.
+            - `--provider deterministic|granite` defaults to `deterministic`.
+            - `--min-duration <seconds>` and `--max-duration <seconds>` configure
+              structural chapter bounds and default to 30 and 300 seconds.
+            - `--cache <path>`, `--allow-network-download`, and `--require-avx2`
+              apply only to the explicit `granite` provider.
+            - `--overwrite` explicitly permits replacing an existing destination.
+
+            ## Worked invocation
+
+            ```text
+            audio-transcriber chapters --input .\transcript.json --output .\chapters.json
+            ```
+
+            ## Result
+
+            The output is a versioned JSON chapter artifact containing source
+            segment IDs in order, snapped start/end timestamps, assembled source
+            text, gap-aware boundary metadata, generation configuration, and
+            transcript provenance. Output is written through a temporary file and
+            atomically moved into place. The exit code is `0`.
+
+            ## Failures
+
+            Invalid arguments return exit code `2`. Missing or malformed transcript
+            input, an existing destination without `--overwrite`, output failures,
+            and unavailable explicitly selected Granite assets return exit code
+            `1`. Cancellation returns exit code `4`. The command never overwrites
+            an existing artifact implicitly and never falls back from Granite to a
+            different provider.
+            """
         )
     ];
 }

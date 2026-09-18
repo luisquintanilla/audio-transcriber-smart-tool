@@ -13,7 +13,9 @@ metadata:
 # Using audio-transcriber
 
 `audio-transcriber` is a .NET PackAsTool Smart Tool. Its library owns the
-capabilities and its CLI is a thin adapter.
+capabilities and its CLI is a thin adapter. The `chapters` capability consumes
+an existing timestamped transcript JSON document; it does not run Whisper, call
+an LLM, or generate summaries.
 
 ## Install
 

@@ -4,12 +4,14 @@ name: audio-transcriber
 version: 0.1.1
 description: >
   Prepare local audio for Whisper transcription and run timestamped local
-  speech recognition with explicit deterministic conversion and diagnostics.
+  speech recognition, or produce source-linked chapters from an existing
+  timestamped transcript with explicit deterministic conversion and diagnostics.
 use_cases:
   - Prepare local audio for speech recognition
   - Check whether a WAV file meets the transcription input contract
   - Produce timestamped transcripts from local speech recordings
   - Render transcripts for people or downstream programs
+  - Produce source-linked timestamped chapters from transcript JSON
   - Check local model, cache, FFmpeg, and package readiness
 platforms:
   - windows
@@ -22,22 +24,27 @@ requires:
     purpose: Needed by the model-backed transcribe capability when the verified Whisper Base artifact is not already cached.
     optional: true
     install: https://huggingface.co/sandrohanea/whisper.net
+  - name: Granite model assets
+    purpose: Needed only when chapters explicitly selects the optional granite provider; the pinned assets must be provisioned in an external cache.
+    optional: true
+    install: https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual
 ---
 
 # audio-transcriber
 
 `audio-transcriber` is a .NET 10 library-first Smart Tool for local audio
-preparation and model-backed speech transcription. The `AudioTranscriber`
-library owns every capability and its self-description; the CLI only parses
-arguments, adapts file paths, renders library-provided help, writes
-stdout/stderr, and returns exit codes.
+preparation, model-backed speech transcription, and deterministic transcript
+chapter generation. The `AudioTranscriber` library owns every capability and
+its self-description; the CLI only parses arguments, adapts file paths,
+renders library-provided help, writes stdout/stderr, and returns exit codes.
 
 ## When to reach for it
 
 Use this tool when the input is local audio and the caller needs either a
-validated transcription WAV or a timestamped local Whisper transcript. It is
-not a summarizer, diarization service, streaming service, remote provider, or
-podcast pipeline.
+validated transcription WAV or a timestamped local Whisper transcript, or when
+an existing timestamped transcript JSON document needs source-linked chapters.
+It is not a summarizer, diarization service, streaming service, remote provider,
+or podcast pipeline.
 
 Conversion is explicit and never happens implicitly inside `transcribe`.
 State, model caches, and temporary files stay outside the source or install
@@ -53,9 +60,11 @@ audio-transcriber --help
 audio-transcriber transcribe --help
 ```
 
-The deterministic capabilities are `manifest`, `doctor`, and `convert`.
-`transcribe` is model-backed local inference. The library APIs are
-the composable surface for callers that need typed values instead of CLI text.
+The deterministic capabilities are `manifest`, `doctor`, `convert`, and
+default-provider `chapters`. `transcribe` is model-backed local inference;
+`chapters --provider granite` is explicitly model-backed and requires its
+external pinned assets. The library APIs are the composable surface for callers
+who need typed values instead of CLI text.
 
 ## Command semantics
 
@@ -65,6 +74,12 @@ the composable surface for callers that need typed values instead of CLI text.
   downloading a model. It returns exit code `0` when the cache policy is
   healthy; blocked optional integrations are reported in its JSON rather than
   treated as command failures.
+- `chapters` consumes one existing transcript JSON document and writes an
+  ordered, versioned chapter artifact. The default provider is offline and
+  deterministic; it never invokes Whisper, converts audio, calls an LLM, or
+  generates summaries. Use `--provider granite` only when the pinned Granite
+  model and tokenizer assets are already available in an external cache or
+  `--allow-network-download` is explicitly supplied.
 
 ## Source checkout and local package install
 
@@ -126,6 +141,9 @@ GitHub, while its default Whisper dependencies come from nuget.org.
 `SmartToolManifestService.Create()` returns a typed manifest and
 `SmartToolManifestService.Markdown()` returns this document from an embedded
 resource, so introspection does not require source files or model downloads.
+The model-independent transcript-processing assembly exposes the typed
+`TranscriptChapterGenerator` and atomic artifact writer for direct
+project-reference consumers; Granite remains a separate optional provider.
 Git checkout and direct project-reference consumption remain supported.
 
 ## Capability boundaries
@@ -133,10 +151,21 @@ Git checkout and direct project-reference consumption remain supported.
 `convert` requires an external FFmpeg executable from `PATH` or `--ffmpeg` and
 never downloads one. `transcribe` requires a valid 16 kHz mono PCM WAV and
 downloads the verified Whisper Base artifact only when it is absent from the
-external user cache. Missing prerequisites fail explicitly; the CLI never
-prompts or returns fabricated/degraded text. Exit code `2` means usage failure,
-`1` means input or integration failure, `4` means cancellation, and `0` means
-success.
+external user cache. `chapters` requires an existing, valid timestamped
+transcript JSON document and refuses to overwrite output unless `--overwrite`
+is supplied. Missing prerequisites fail explicitly; the CLI never prompts or
+returns fabricated/degraded text. Exit code `2` means usage failure, `1` means
+input or integration failure, `4` means cancellation, and `0` means success.
+
+The production `TranscriptChapterGenerator` and
+`TranscriptChapterArtifactFileWriter` compose the model-independent transcript
+contracts for `chapters`. They preserve source segment identity and order, snap
+boundaries to complete source segments, retain gap-before/gap-after metadata,
+and write through a temporary file followed by an atomic move. The default
+provider is structural and offline. Provider-backed generation is asynchronous
+and requires explicit injection; the CLI's `granite` selection creates the
+optional provider only after validating its external assets, and never falls
+back to deterministic generation after a Granite readiness failure.
 
 ## Model integration status
 
