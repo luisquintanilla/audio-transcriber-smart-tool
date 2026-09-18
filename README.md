@@ -404,3 +404,51 @@ partial files on cancellation or write failure. This layer contains no model
 runtime, network access, model download, CLI command, manifest entry, or
 package publication change; deterministic fake providers are used by the
 offline test suite.
+
+### Optional Microsoft Foundry Local enrichment
+
+`src/AudioTranscriber.FoundryLocal` is a separately packaged adapter
+(`AudioTranscriber.FoundryLocal`) for the provider-neutral enrichment
+contracts. It references the optional Microsoft Foundry Local SDK and the
+documented OpenAI-compatible client surface; the core `AudioTranscriber` and
+`AudioTranscriber.TranscriptProcessing` packages do not acquire those
+dependencies.
+
+The model alias or model ID is required and is never guessed. The adapter
+discovers the local catalog, validates cached and loaded readiness, and reports
+the available models, external cache location, and stable diagnostic code
+when the runtime or requested model is unavailable. Foundry Local model files
+and runtime state remain in its external cache; they are not packaged with
+this repository. Downloads are disabled by default and require
+`AllowModelDownload = true`. Inference stays in the SDK-managed local runtime,
+with no silent cloud fallback or remote endpoint.
+
+```csharp
+using AudioTranscriber.FoundryLocal;
+using AudioTranscriber.TranscriptProcessing;
+
+var modelAlias = Environment.GetEnvironmentVariable(
+    "AUDIO_TRANSCRIBER_FOUNDRY_LOCAL_MODEL")
+    ?? throw new InvalidOperationException("Choose a local model alias explicitly.");
+await using var provider = new FoundryLocalEnrichmentProvider(
+    new FoundryLocalEnrichmentOptions(modelAlias),
+    new FoundryLocalSdkRuntime());
+
+var enrichment = await new TranscriptChapterEnrichmentOrchestrator(
+        provider,
+        provider)
+    .EnrichAsync(
+        chapterArtifact,
+        provider.CreateProcessingOptions(
+            TranscriptChapterEnrichmentFailurePolicy.PreservePartial,
+            includeOverallSummary: true));
+```
+
+The adapter sends chapter prompts with exact source-segment evidence and
+schema-versioned JSON output. Its overall-summary prompt contains only
+successful chapter summaries and IDs, so the full transcript is not
+reprocessed. The default solution tests use fake runtime/chat clients and do
+not download models or require a running local service. The opt-in test is
+enabled with `AUDIO_TRANSCRIBER_FOUNDRY_LOCAL_MODEL`; if that explicitly
+requested runtime or model is unavailable, it fails with the readiness
+diagnostic rather than falling back elsewhere.

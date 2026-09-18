@@ -1,0 +1,483 @@
+using System.Text.Json;
+using AudioTranscriber.FoundryLocal;
+using AudioTranscriber.TranscriptProcessing;
+
+namespace AudioTranscriber.FoundryLocal.Tests;
+
+public sealed class FoundryLocalAdapterTests
+{
+    [Fact]
+    public void Prompts_are_stable_and_overall_prompt_uses_chapter_summaries_only()
+    {
+        var artifact = CreateArtifact(
+            Segment(
+                "first source",
+                0,
+                1,
+                0,
+                "segment-first",
+                "source-first"),
+            Segment(
+                "second source",
+                1,
+                2,
+                1,
+                "segment-second",
+                "source-second"));
+        var chapter = artifact[0];
+        var chapterPrompt = FoundryLocalPromptBuilder.BuildChapterPrompt(chapter);
+
+        Assert.Equal("system", chapterPrompt[0].Role);
+        Assert.Equal("user", chapterPrompt[1].Role);
+        Assert.Contains(chapter.Id, chapterPrompt[1].Content);
+        Assert.Contains("segment-first", chapterPrompt[1].Content);
+        Assert.Contains("source-first", chapterPrompt[1].Content);
+        Assert.Contains("00:00:01", chapterPrompt[1].Content);
+
+        var overallRequest = new TranscriptOverallSummaryRequest(
+            [
+                new TranscriptChapterSummaryReference(
+                    "chapter-one",
+                    new TranscriptChapterSummary(
+                        "first summary",
+                        ["topic"])),
+                new TranscriptChapterSummaryReference(
+                    "chapter-two",
+                    new TranscriptChapterSummary("second summary"))
+            ],
+            isPartial: false);
+        var overallPrompt = FoundryLocalPromptBuilder.BuildOverallPrompt(overallRequest);
+
+        Assert.Contains("chapter-one", overallPrompt[1].Content);
+        Assert.Contains("first summary", overallPrompt[1].Content);
+        Assert.DoesNotContain("first source", overallPrompt[1].Content);
+        Assert.DoesNotContain("second source", overallPrompt[1].Content);
+    }
+
+    [Fact]
+    public void Parser_preserves_exact_evidence_and_rejects_unknown_segments()
+    {
+        var artifact = CreateArtifact(
+            Segment(
+                "source",
+                0,
+                1,
+                0,
+                "segment-source",
+                "source-id"));
+        var chapter = Assert.Single(artifact);
+        var response = JsonSerializer.Serialize(
+            new
+            {
+                schemaVersion = "1.0",
+                kind = "chapter",
+                chapterId = chapter.Id,
+                summary = "A source-linked summary.",
+                title = "A title",
+                keywords = new[] { "zeta", "alpha" },
+                evidence = new[]
+                {
+                    new
+                    {
+                        sourceSegmentId = "segment-source",
+                        sourceId = "source-id",
+                        start = "00:00:00.0000000",
+                        end = "00:00:01.0000000"
+                    }
+                }
+            });
+
+        var parsed = FoundryLocalResponseParser.ParseChapterSummary(
+            response,
+            chapter);
+
+        Assert.Equal("A source-linked summary.", parsed.Summary);
+        Assert.Equal(["alpha", "zeta"], parsed.Keywords);
+        var evidence = Assert.Single(parsed.Evidence);
+        Assert.Equal("segment-source", evidence.SourceSegmentId);
+        Assert.Equal("source-id", evidence.SourceId);
+        Assert.Equal(TimeSpan.Zero, evidence.Start);
+        Assert.Equal(TimeSpan.FromSeconds(1), evidence.End);
+
+        var invalid = response.Replace(
+            "\"sourceSegmentId\":\"segment-source\"",
+            "\"sourceSegmentId\":\"not-a-source\"",
+            StringComparison.Ordinal);
+        var exception = Assert.Throws<FoundryLocalResponseException>(
+            () => FoundryLocalResponseParser.ParseChapterSummary(invalid, chapter));
+        Assert.Equal("unknown_evidence_segment", exception.Code);
+    }
+
+    [Fact]
+    public async Task Provider_passes_explicit_model_timeout_and_provenance()
+    {
+        var artifact = CreateArtifact(
+            Segment("source", 0, 1, 0, "segment-source"));
+        var chat = new FakeChatClient(
+            (request, _) =>
+            {
+                var chapter = Assert.Single(artifact);
+                return Task.FromResult(ChapterResponse(chapter, "summary"));
+            });
+        var runtime = new FakeRuntime(chat);
+        var provider = new FoundryLocalEnrichmentProvider(
+            new FoundryLocalEnrichmentOptions("chosen-model")
+            {
+                RequestTimeout = TimeSpan.FromSeconds(9),
+                MaxOutputTokens = 321,
+                Temperature = 0.25
+            },
+            runtime);
+
+        var options = provider.CreateProcessingOptions(
+            TranscriptChapterEnrichmentFailurePolicy.PreservePartial,
+            includeOverallSummary: true);
+        var summary = await provider.EnrichAsync(
+            new TranscriptChapterEnrichmentRequest(Assert.Single(artifact)));
+
+        Assert.Equal("summary", summary!.Summary);
+        Assert.Equal(1, runtime.PrepareCount);
+        var request = Assert.Single(chat.Requests);
+        Assert.Equal("model-id", request.ModelId);
+        Assert.Equal(321, request.MaxOutputTokens);
+        Assert.Equal(0.25, request.Temperature);
+        Assert.Equal(TimeSpan.FromSeconds(9), chat.Timeouts.Single());
+        Assert.Equal("foundry-local", options.Provider);
+        Assert.Equal("chosen-model", options.Model);
+        Assert.Equal(
+            "disabled",
+            options.ProviderConfiguration!["modelDownloadPolicy"]);
+        Assert.Equal(
+            "in-process-local",
+            options.ProviderConfiguration!["executionPolicy"]);
+
+        await provider.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PreservePartial_keeps_successes_and_overall_summary_uses_successful_ids()
+    {
+        var artifact = CreateArtifact(
+            Segment("first", 0, 1, 0, "segment-first"),
+            Segment("second", 1, 2, 1, "segment-second"),
+            Segment("third", 2, 3, 2, "segment-third"));
+        var chat = new FakeChatClient(
+            (request, _) =>
+            {
+                if (request.Messages[1].Content.Contains(
+                        $"chapterId: {artifact[1].Id}",
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("simulated provider failure");
+                }
+
+                if (request.Messages[1].Content.Contains(
+                        "chapterSummaries:",
+                        StringComparison.Ordinal))
+                {
+                    return Task.FromResult(
+                        OverallResponse(
+                            [artifact[0].Id, artifact[2].Id],
+                            "partial overall"));
+                }
+
+                var chapter = artifact.Single(
+                    candidate => request.Messages[1].Content.Contains(
+                        $"chapterId: {candidate.Id}",
+                        StringComparison.Ordinal));
+                return Task.FromResult(
+                    ChapterResponse(
+                        chapter,
+                        $"summary-{chapter.Id}"));
+            });
+        var provider = new FoundryLocalEnrichmentProvider(
+            new FoundryLocalEnrichmentOptions("chosen-model"),
+            new FakeRuntime(chat));
+
+        var document = await new TranscriptChapterEnrichmentOrchestrator(
+                provider,
+                provider)
+            .EnrichAsync(
+                artifact,
+                provider.CreateProcessingOptions(
+                    TranscriptChapterEnrichmentFailurePolicy.PreservePartial,
+                    includeOverallSummary: true));
+
+        Assert.Equal(
+            [
+                TranscriptChapterEnrichmentStatus.Succeeded,
+                TranscriptChapterEnrichmentStatus.Failed,
+                TranscriptChapterEnrichmentStatus.Succeeded
+            ],
+            document.Select(chapter => chapter.Status));
+        Assert.Equal("provider_failure", document[1].Failure!.Code);
+        Assert.Equal("partial overall", document.OverallSummary!.Summary);
+        Assert.Equal(
+            [artifact[0].Id, artifact[2].Id],
+            document.OverallSummary.ChapterIds);
+
+        await provider.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task FailFast_surfaces_provider_failure_without_fallback()
+    {
+        var artifact = CreateArtifact(
+            Segment("first", 0, 1, 0, "segment-first"),
+            Segment("second", 1, 2, 1, "segment-second"));
+        var chat = new FakeChatClient(
+            (request, _) =>
+            {
+                if (request.Messages[1].Content.Contains(
+                        $"chapterId: {artifact[1].Id}",
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("simulated provider failure");
+                }
+
+                var chapter = artifact.Single(
+                    candidate => request.Messages[1].Content.Contains(
+                        $"chapterId: {candidate.Id}",
+                        StringComparison.Ordinal));
+                return Task.FromResult(ChapterResponse(chapter, "first summary"));
+            });
+        var provider = new FoundryLocalEnrichmentProvider(
+            new FoundryLocalEnrichmentOptions("chosen-model"),
+            new FakeRuntime(chat));
+
+        var exception = await Assert.ThrowsAsync<TranscriptChapterEnrichmentException>(
+            () => new TranscriptChapterEnrichmentOrchestrator(provider)
+                .EnrichAsync(
+                    artifact,
+                    provider.CreateProcessingOptions()));
+
+        Assert.Equal(artifact[1].Id, exception.ChapterId);
+        Assert.Equal("provider_failure", exception.Code);
+        await provider.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Cancellation_is_propagated_to_the_chat_client()
+    {
+        var artifact = CreateArtifact(
+            Segment("blocking", 0, 1, 0, "segment-blocking"));
+        var started = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var chat = new FakeChatClient(
+            async (_, cancellationToken) =>
+            {
+                started.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                return string.Empty;
+            });
+        var provider = new FoundryLocalEnrichmentProvider(
+            new FoundryLocalEnrichmentOptions("chosen-model"),
+            new FakeRuntime(chat));
+        using var cancellation = new CancellationTokenSource();
+
+        var task = provider.EnrichAsync(
+            new TranscriptChapterEnrichmentRequest(Assert.Single(artifact)),
+            cancellation.Token)
+            .AsTask();
+        await started.Task;
+        cancellation.Cancel();
+
+        var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => task);
+        Assert.Equal(cancellation.Token, exception.CancellationToken);
+        await provider.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Readiness_failures_are_exposed_without_cloud_fallback()
+    {
+        var artifact = CreateArtifact(
+            Segment("source", 0, 1, 0, "segment-source"));
+        var runtime = new FailingRuntime(
+            new FoundryLocalProviderException(
+                FoundryLocalDiagnosticCode.ModelNotReady,
+                "missing-model",
+                "The requested model is not cached."));
+        var provider = new FoundryLocalEnrichmentProvider(
+            new FoundryLocalEnrichmentOptions("missing-model"),
+            runtime);
+
+        var exception = await Assert.ThrowsAsync<FoundryLocalProviderException>(
+            () => provider.EnrichAsync(
+                new TranscriptChapterEnrichmentRequest(Assert.Single(artifact)))
+                .AsTask());
+
+        Assert.Equal(FoundryLocalDiagnosticCode.ModelNotReady, exception.DiagnosticCode);
+        Assert.Equal("missing-model", exception.ModelAlias);
+        Assert.Equal(1, runtime.PrepareCount);
+        await provider.DisposeAsync();
+    }
+
+    private static string ChapterResponse(
+        TranscriptChapterArtifact chapter,
+        string summary)
+    {
+        return JsonSerializer.Serialize(
+            new
+            {
+                schemaVersion = "1.0",
+                kind = "chapter",
+                chapterId = chapter.Id,
+                summary,
+                title = (string?)null,
+                keywords = new[] { "topic" },
+                evidence = chapter.SourceSegments.Select(
+                    segment => new
+                    {
+                        sourceSegmentId = segment.Id,
+                        sourceId = segment.SourceId,
+                        start = segment.Start.ToString("c"),
+                        end = segment.End.ToString("c")
+                    })
+            });
+    }
+
+    private static string OverallResponse(
+        IReadOnlyList<string> chapterIds,
+        string summary)
+    {
+        return JsonSerializer.Serialize(
+            new
+            {
+                schemaVersion = "1.0",
+                kind = "overall",
+                summary,
+                chapterIds
+            });
+    }
+
+    private static TranscriptChapterArtifactDocument CreateArtifact(
+        params TranscriptSegment[] segments)
+    {
+        var document = new TranscriptDocument(
+            "fixture.wav",
+            new TranscriptProvenance("fixture", "fixture-model"),
+            segments);
+        var chunks = new TranscriptChunkBuilder(
+                new DeterministicEmbeddingProvider(),
+                new DeterministicScoringProvider())
+            .Build(
+                document,
+                new TranscriptChunkingOptions
+                {
+                    MinimumDuration = TimeSpan.FromMilliseconds(500),
+                    MaximumDuration = TimeSpan.FromSeconds(1)
+                });
+        return new TranscriptChapterArtifactGenerator().Generate(chunks);
+    }
+
+    private static TranscriptSegment Segment(
+        string text,
+        double startSeconds,
+        double endSeconds,
+        int ordinal,
+        string id,
+        string? sourceId = null) =>
+        new(
+            text,
+            TimeSpan.FromSeconds(startSeconds),
+            TimeSpan.FromSeconds(endSeconds),
+            ordinal,
+            sourceId,
+            id);
+
+    private sealed class DeterministicEmbeddingProvider : ITranscriptEmbeddingProvider
+    {
+        public ValueTask<TranscriptEmbeddingResponse> EmbedAsync(
+            TranscriptEmbeddingRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(new TranscriptEmbeddingResponse([1f]));
+        }
+    }
+
+    private sealed class DeterministicScoringProvider : ITranscriptChunkScoringProvider
+    {
+        public ValueTask<double> ScoreAsync(
+            TranscriptChunkScoringRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(1d);
+        }
+    }
+
+    private sealed class FakeRuntime : IFoundryLocalRuntime
+    {
+        private readonly IFoundryLocalChatClient chatClient;
+
+        public FakeRuntime(IFoundryLocalChatClient chatClient)
+        {
+            this.chatClient = chatClient;
+        }
+
+        public int PrepareCount { get; private set; }
+
+        public Task<FoundryLocalRuntimeSession> PrepareAsync(
+            FoundryLocalEnrichmentOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PrepareCount++;
+            return Task.FromResult(
+                new FoundryLocalRuntimeSession(
+                    options.ModelAlias,
+                    "model-id",
+                    new Uri("http://127.0.0.1:5000/v1"),
+                    "external-cache",
+                    chatClient));
+        }
+    }
+
+    private sealed class FailingRuntime : IFoundryLocalRuntime
+    {
+        private readonly Exception exception;
+
+        public FailingRuntime(Exception exception)
+        {
+            this.exception = exception;
+        }
+
+        public int PrepareCount { get; private set; }
+
+        public Task<FoundryLocalRuntimeSession> PrepareAsync(
+            FoundryLocalEnrichmentOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PrepareCount++;
+            return Task.FromException<FoundryLocalRuntimeSession>(exception);
+        }
+    }
+
+    private sealed class FakeChatClient : IFoundryLocalChatClient
+    {
+        private readonly Func<FoundryLocalChatRequest, CancellationToken, Task<string>> handler;
+
+        public FakeChatClient(
+            Func<FoundryLocalChatRequest, CancellationToken, Task<string>> handler)
+        {
+            this.handler = handler;
+        }
+
+        public List<FoundryLocalChatRequest> Requests { get; } = [];
+
+        public List<TimeSpan> Timeouts { get; } = [];
+
+        public Task<string> CompleteAsync(
+            FoundryLocalChatRequest request,
+            TimeSpan timeout,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            Timeouts.Add(timeout);
+            return handler(request, cancellationToken);
+        }
+    }
+}
