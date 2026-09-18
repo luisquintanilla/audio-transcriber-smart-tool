@@ -281,6 +281,18 @@ asynchronously evaluated chapters contain their numeric model score. No
 embedding implementation, model asset, network dependency, CLI capability, or
 Smart Tool manifest entry is required.
 
+## Optional transcript ingestion boundary
+
+`src/AudioTranscriber.TranscriptIngestion` maps validated transcript documents
+to the stable, runtime-independent `TranscriptIngestionDocument` contract. It
+preserves source and provenance metadata, segment IDs, source IDs, timestamps,
+speaker, confidence, source metadata, and canonical ordering. The project is
+non-packable and references only `AudioTranscriber.TranscriptProcessing`; it
+intentionally does not reference the preview
+`Microsoft.Extensions.DataIngestion` packages. Applications can bridge this
+contract to the ingestion runtime they select without adding preview
+dependencies to the core `AudioTranscriber` package.
+
 ## Clean local-tool installation
 
 Create a package and install it into a temporary tool manifest without changing
