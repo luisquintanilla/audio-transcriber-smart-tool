@@ -1,8 +1,12 @@
 # Audio transcriber Smart Tool
 
-A .NET 10 library-first Smart Tool for explicit local audio conversion and batch transcription of 16 kHz mono WAV files. The `AudioTranscriber` library owns the domain behavior; `audio-transcriber` is only a non-interactive CLI shell.
+A .NET 10 library-first Smart Tool for local audio preparation and
+model-backed speech transcription. The `AudioTranscriber` library owns every
+capability; `audio-transcriber` is only a non-interactive CLI adapter.
 
-See [`src/AudioTranscriber/SMART_TOOL.md`](src/AudioTranscriber/SMART_TOOL.md) for the scope, commands, Whisper.net provenance, cache policy, and the optional Model Garden package status.
+See [`src/AudioTranscriber/SMART_TOOL.md`](src/AudioTranscriber/SMART_TOOL.md)
+for the manifest, source/package launch paths, capability boundaries,
+Whisper.net provenance, cache policy, and optional Model Garden package details.
 
 ## Build and test
 
@@ -11,37 +15,63 @@ dotnet restore .\AudioTranscriber.sln
 dotnet test .\AudioTranscriber.sln --no-restore
 ```
 
-The default build is deterministic and does not download model binaries. The
-first real `transcribe` invocation downloads and verifies the pinned Whisper
-Base model outside the repository. Optional Model Garden package validation is
-documented in `SMART_TOOL.md`.
+The default build and deterministic capabilities do not download model
+binaries. The first real `transcribe` invocation downloads and verifies the
+pinned Whisper Base model outside the repository. Optional Model Garden package
+validation is documented in `SMART_TOOL.md`.
+
+## Source checkout
+
+`dotnet tool install` does not consume a Git URL directly. From a source
+checkout, restore and launch the PackAsTool project explicitly:
+
+```powershell
+dotnet restore .\AudioTranscriber.sln
+dotnet run --project .\src\audio-transcriber\audio-transcriber.csproj --no-restore -- --help
+```
+
+The top-level `-h` is a terse capability summary and `--help` is the full
+agent-facing tool skill. Each capability has the same split, for example:
+
+```powershell
+dotnet run --project .\src\audio-transcriber\audio-transcriber.csproj --no-restore -- -h
+dotnet run --project .\src\audio-transcriber\audio-transcriber.csproj --no-restore -- transcribe --help
+```
+
+The introspection and diagnostics commands have distinct roles:
+
+- `manifest` prints the canonical manifest document.
+- `doctor` reports cache and integration readiness without downloading a model.
 
 ## Clean local-tool installation
 
-The CLI is distributed as a NuGet tool. To install a locally packed artifact
-without changing global tool state:
+Create a package and install it into a temporary tool manifest without changing
+global tool state:
 
 ```powershell
+New-Item -ItemType Directory -Force .\artifacts\tool | Out-Null
+dotnet pack .\src\audio-transcriber\audio-transcriber.csproj --configuration Release --output .\artifacts\tool
 $packageDirectory = (Resolve-Path .\artifacts\tool).Path
 $installDirectory = Join-Path $env:TEMP ("audio-transcriber-install-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $installDirectory | Out-Null
 dotnet new tool-manifest --output $installDirectory
 Push-Location $installDirectory
 dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
+dotnet tool run audio-transcriber --help
 dotnet tool run audio-transcriber manifest
-dotnet tool run audio-transcriber status
 dotnet tool run audio-transcriber doctor
 dotnet tool run audio-transcriber convert --input .\source.audio --output .\speech.wav
 dotnet tool run audio-transcriber transcribe --input $env:TEMP\audio-transcriber-jfk.wav --format json
 Pop-Location
 ```
 
-Create the package first with:
-
-```powershell
-New-Item -ItemType Directory -Force .\artifacts\tool | Out-Null
-dotnet pack .\src\audio-transcriber\audio-transcriber.csproj --configuration Release --output .\artifacts\tool
-```
+The repository documents source checkout and local package installation; it
+does not assume or claim publication to a public NuGet feed. A .NET 10 SDK is
+required for restore, build, test, and packing. `dotnetup` is an optional SDK
+manager, not a launcher dependency; when available, use
+`dotnetup sdk install 10.0`.
+An already-packed tool invocation needs the matching .NET 10 runtime, not the
+SDK.
 
 The installed tool never stores model binaries in the package or repository.
 The first transcription requires network access to download the pinned

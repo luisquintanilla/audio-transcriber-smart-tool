@@ -3,83 +3,91 @@ smart_tool_format: 1
 name: audio-transcriber
 version: 0.1.0
 description: >
-  Convert local audio explicitly to the transcription contract and run local
-  Whisper Base transcription with deterministic timestamped transcript renderers.
+  Prepare local audio for Whisper transcription and run timestamped local
+  speech recognition with explicit deterministic conversion and diagnostics.
 use_cases:
-  - Convert local audio through external FFmpeg into 16 kHz mono 16-bit PCM WAV
-  - Validate local WAV inputs against the supported 16 kHz mono contract
-  - Transcribe local speech with real timestamped Whisper Base segments
-  - Render typed transcripts as text, JSON, SRT, or WebVTT
-  - Inspect deterministic model, cache, FFmpeg, and package integration readiness
+  - Prepare local audio for speech recognition
+  - Check whether a WAV file meets the transcription input contract
+  - Produce timestamped transcripts from local speech recordings
+  - Render transcripts for people or downstream programs
+  - Check local model, cache, FFmpeg, and package readiness
 platforms:
   - windows
+requires:
+  - name: ffmpeg
+    purpose: Required only by the deterministic convert capability; other capabilities remain available without it.
+    optional: true
+    install: https://ffmpeg.org/download.html
+  - name: network access
+    purpose: Needed by the model-backed transcribe capability when the verified Whisper Base artifact is not already cached.
+    optional: true
+    install: https://huggingface.co/sandrohanea/whisper.net
 ---
 
-# Audio transcriber Smart Tool
+# audio-transcriber
 
-`audio-transcriber` is a .NET 10, library-first Smart Tool for deterministic
-local batch transcription. The CLI is intentionally thin: all input
-validation, orchestration, typed transcript contracts, renderers, manifest,
-and doctor behavior live in `AudioTranscriber`.
+`audio-transcriber` is a .NET 10 library-first Smart Tool for local audio
+preparation and model-backed speech transcription. The `AudioTranscriber`
+library owns every capability and its self-description; the CLI only parses
+arguments, adapts file paths, renders library-provided help, writes
+stdout/stderr, and returns exit codes.
 
-## Scope
+## When to reach for it
 
-- WAV-first local batch input.
-- 16 kHz, mono PCM WAV is required.
-- Explicit conversion to 16 kHz, mono, 16-bit PCM WAV through external FFmpeg.
-- Whisper Base is the default model target.
-- Real timestamped typed transcript segments.
-- Text, JSON, SRT, and WebVTT renderers.
-- Deterministic `manifest` and `doctor` commands.
-- Explicit non-interactive failures.
+Use this tool when the input is local audio and the caller needs either a
+validated transcription WAV or a timestamped local Whisper transcript. It is
+not a summarizer, diarization service, streaming service, remote provider, or
+podcast pipeline.
 
-The tool deliberately does not implement summaries, diarization, streaming, or
-remote providers. Conversion is explicit and never happens implicitly inside
-`transcribe`. `manifest` emits this canonical document from the packaged
-library. The separate `status` command emits deterministic machine-readable
-frontmatter status JSON.
+Conversion is explicit and never happens implicitly inside `transcribe`.
+State, model caches, and temporary files stay outside the source or install
+tree. Output artifacts are written only where the caller asks for them.
 
-## Catalog readiness
+## Use and help
 
-**Available.** The default engine uses Whisper.net 1.9.0 with the public
-whisper.cpp runtime and returns the underlying model's real timestamped
-segments. Model files are downloaded only on first transcription, verified by
-SHA-256, and stored outside the repository.
-
-## CLI
+The top-level `-h` is a terse capability summary. The top-level `--help` is
+the full tool skill. Read the capability skill before invoking a capability:
 
 ```powershell
-audio-transcriber manifest
-audio-transcriber status
-audio-transcriber doctor
-audio-transcriber convert --input .\source.audio --output .\speech.wav
-audio-transcriber transcribe --input .\speech.wav --format json
+audio-transcriber --help
+audio-transcriber transcribe --help
 ```
 
-The CLI is a PackAsTool command and never prompts. Exit code `2` means usage
-failure, `1` means an input/integration failure, `4` means cancellation, and
-`0` means success. Model download, checksum, native runtime, and input errors
-are reported explicitly rather than producing degraded or fabricated output.
-Transcript renderers expose only input basenames, not absolute local paths.
-Doctor output and CLI/model errors use safe path tokens such as
-`<repository>`, `<model-cache>`, and `<model-file>`.
+The deterministic capabilities are `manifest`, `doctor`, and `convert`.
+`transcribe` is model-backed local inference. The library APIs are
+the composable surface for callers that need typed values instead of CLI text.
 
-## Audio conversion
+## Command semantics
 
-`convert` preserves its input and writes a WAV file with the transcription
-contract: 16,000 Hz, mono, 16-bit PCM. It requires both `--input` and
-`--output`, refuses to overwrite an existing output unless `--force` is
-provided, and reports conversion and output-validation failures explicitly.
+- `manifest` prints the canonical `SMART_TOOL.md` document shipped by the
+  library.
+- `doctor` checks cache placement and local integration readiness without
+  downloading a model. It returns exit code `0` when the cache policy is
+  healthy; blocked optional integrations are reported in its JSON rather than
+  treated as command failures.
 
-Conversion uses an external `ffmpeg` executable. The tool first looks for
-`ffmpeg` on `PATH`; `--ffmpeg <path>` can select a specific executable. No
-native binaries are bundled and no binaries are downloaded. Source formats are
-therefore limited to formats supported by the installed FFmpeg executable; the
-tool does not promise support for any particular container or codec.
+## Source checkout and local package install
 
-## Distribution smoke
+`dotnet tool install` does not install directly from a Git URL. From a source
+checkout, a .NET 10 SDK is required to restore and run the PackAsTool project
+explicitly:
 
-Build and install the packed CLI into a fresh temporary local-tool manifest:
+```powershell
+dotnet restore .\AudioTranscriber.sln
+dotnet run --project .\src\audio-transcriber\audio-transcriber.csproj --no-restore -- --help
+```
+
+The SDK can be installed from the official .NET download page above. `dotnetup`
+is an optional SDK manager, not a launcher dependency; when available, it can
+install the required channel with `dotnetup sdk install 10.0`. See its current
+guidance at
+`https://github.com/dotnet/sdk/blob/release/dnup/documentation/general/dotnetup/usecases/update-installations.md`.
+
+The SDK is needed for a source checkout, restore, test, or pack operation. An
+already-packed tool invocation needs the matching .NET 10 runtime, not the SDK.
+
+For an isolated installed tool, pack first and install the local `.nupkg`
+through a temporary tool manifest:
 
 ```powershell
 New-Item -ItemType Directory -Force .\artifacts\tool | Out-Null
@@ -89,19 +97,25 @@ $installDirectory = Join-Path $env:TEMP ("audio-transcriber-install-" + [guid]::
 dotnet new tool-manifest --output $installDirectory
 Push-Location $installDirectory
 dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
-dotnet tool run audio-transcriber manifest
-dotnet tool run audio-transcriber status
-dotnet tool run audio-transcriber doctor
-dotnet tool run audio-transcriber transcribe --input $env:TEMP\audio-transcriber-jfk.wav --format json
+dotnet tool run audio-transcriber --help
 Pop-Location
 ```
 
-For another checkout, replace the absolute `--add-source` path with that
-checkout's `artifacts\tool` directory. The `.nupkg` contains the library under
-`tools/net10.0/any/AudioTranscriber.dll`; the canonical `SMART_TOOL.md` is an
-embedded library resource, and no model binaries are packaged. The installed
-tool still downloads the pinned artifact only on first transcription and keeps
-it in the external user cache.
+The repository documents source checkout and local package installation; it
+does not assume or claim publication to a public NuGet feed. The `.nupkg`
+contains the library, the canonical `SMART_TOOL.md`, and `smart-tool.json`; no
+model binaries or FFmpeg binaries are packaged. Replace the local
+`--add-source` path with another checkout's package directory when needed.
+
+## Capability boundaries
+
+`convert` requires an external FFmpeg executable from `PATH` or `--ffmpeg` and
+never downloads one. `transcribe` requires a valid 16 kHz mono PCM WAV and
+downloads the verified Whisper Base artifact only when it is absent from the
+external user cache. Missing prerequisites fail explicitly; the CLI never
+prompts or returns fabricated/degraded text. Exit code `2` means usage failure,
+`1` means input or integration failure, `4` means cancellation, and `0` means
+success.
 
 ## Model integration status
 

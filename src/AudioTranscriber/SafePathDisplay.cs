@@ -1,6 +1,6 @@
 namespace AudioTranscriber;
 
-internal static class SafePathDisplay
+public static class SafePathDisplay
 {
     public const string RepositoryToken = "<repository>";
     public const string ModelCacheToken = "<model-cache>";
