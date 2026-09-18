@@ -56,7 +56,7 @@ public static class SmartToolHelpRenderer
             {string.Join(Environment.NewLine, RenderCapabilityLinks())}
 
             <skill_resources>
-              <file>SMART_TOOL.md</file>
+              <file>src/AudioTranscriber/SMART_TOOL.md</file>
             </skill_resources>
             </skill_content>
             """;

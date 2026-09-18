@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace AudioTranscriber;
 
 public enum SmartToolCapabilityKind
@@ -26,7 +28,9 @@ public static class SmartToolCapabilityRegistry
 
     public static IReadOnlyList<SmartToolCapability> All => RegisteredCapabilities;
 
-    public static bool TryGet(string name, out SmartToolCapability capability)
+    public static bool TryGet(
+        string name,
+        [NotNullWhen(true)] out SmartToolCapability? capability)
     {
         capability = RegisteredCapabilities.FirstOrDefault(
             item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase))!;

@@ -22,6 +22,15 @@ public sealed class SmartToolServicesTests
     }
 
     [Fact]
+    public void Capability_registry_lookup_is_nullable_safe_for_missing_capabilities()
+    {
+        Assert.False(SmartToolCapabilityRegistry.TryGet("missing", out SmartToolCapability? missing));
+        Assert.Null(missing);
+        Assert.True(SmartToolCapabilityRegistry.TryGet("manifest", out var manifest));
+        Assert.Equal("manifest", manifest.Name);
+    }
+
+    [Fact]
     public void Capability_registry_renders_tool_skill_from_manifest_body()
     {
         var help = SmartToolHelpRenderer.RenderToolHelp();
@@ -29,6 +38,7 @@ public sealed class SmartToolServicesTests
         Assert.Contains("<skill_content name=\"audio-transcriber\">", help);
         Assert.Contains("# audio-transcriber", help);
         Assert.Contains("audio-transcriber transcribe --help", help);
+        Assert.Contains("<file>src/AudioTranscriber/SMART_TOOL.md</file>", help);
         Assert.Contains("[model-backed]", help);
         Assert.DoesNotContain("smart_tool_format:", help);
     }
