@@ -7,7 +7,7 @@
     <RootNamespace>AudioTranscriber.Cli</RootNamespace>
     <PackAsTool>true</PackAsTool>
     <PackageId>audio-transcriber</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>luisquintanilla</Authors>
     <Description>Local audio preparation and Whisper speech transcription as a library-first Smart Tool.</Description>
     <RepositoryUrl>https://github.com/luisquintanilla/audio-transcriber-smart-tool</RepositoryUrl>

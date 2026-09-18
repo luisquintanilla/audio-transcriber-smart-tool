@@ -3,7 +3,7 @@ namespace AudioTranscriber;
 public static class SmartToolPaths
 {
     public const string ToolId = "audio-transcriber";
-    public const string ToolVersion = "0.1.0";
+    public const string ToolVersion = "0.1.1";
 
     public static string DefaultModelCacheDirectory =>
         Path.Combine(
