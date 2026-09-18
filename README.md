@@ -251,6 +251,23 @@ confidence, source metadata, and canonical ordering without introducing a
 second generic document hierarchy. Its batch overload preserves input order
 and fails fast on cancellation before enumerating the source.
 
+## Optional transcript chunking and chapter artifacts
+
+`src/AudioTranscriber.TranscriptProcessing` also provides the versioned `1.0`
+chunking and chapter-artifact contracts. `TranscriptChunkBuilder` creates
+deterministic windows aligned to complete source segments, retains source IDs
+and metadata, and represents timing gaps as explicit empty windows. Minimum and
+maximum durations are applied without splitting a source segment. The
+synchronous API is structural and offline; `BuildAsync` optionally evaluates
+content windows through the narrow `ITranscriptEmbeddingProvider` and
+`ITranscriptChunkScoringProvider` seams, so model runtimes remain outside this
+package.
+
+`TranscriptChapterArtifactGenerator` projects non-gap windows into an ordered,
+versioned `TranscriptChapterArtifactDocument` and provides deterministic JSON
+serialization. No embedding implementation, model asset, network dependency,
+CLI capability, or Smart Tool manifest entry is required.
+
 ## Clean local-tool installation
 
 Create a package and install it into a temporary tool manifest without changing
