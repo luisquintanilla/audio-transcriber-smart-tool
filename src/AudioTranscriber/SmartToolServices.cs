@@ -34,10 +34,20 @@ public sealed record SmartToolManifest
     public required string Description { get; init; }
     public required IReadOnlyList<string> UseCases { get; init; }
     public required IReadOnlyList<string> Platforms { get; init; }
+    public required IReadOnlyList<SmartToolRequirement> Requires { get; init; }
 
     [System.Text.Json.Serialization.JsonIgnore]
     public string Markdown { get; init; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Body { get; init; } = string.Empty;
 }
+
+public sealed record SmartToolRequirement(
+    string Name,
+    string Purpose,
+    string Install,
+    bool Optional = false);
 
 public static class SmartToolManifestService
 {
@@ -46,6 +56,8 @@ public static class SmartToolManifestService
     public static SmartToolManifest Create() => Manifest.Value;
 
     public static string Markdown() => Manifest.Value.Markdown;
+
+    public static string Body() => Manifest.Value.Body;
 
     public static string ToJson(SmartToolManifest manifest)
     {
@@ -81,6 +93,7 @@ public static class SmartToolManifestService
         string? description = null;
         var useCases = new List<string>();
         var platforms = new List<string>();
+        var requirements = new List<SmartToolRequirement>();
 
         for (var index = 0; index < frontmatter.Length; index++)
         {
@@ -124,6 +137,10 @@ public static class SmartToolManifestService
             {
                 ReadList(frontmatter, ref index, platforms);
             }
+            else if (line == "requires:")
+            {
+                ReadRequirements(frontmatter, ref index, requirements);
+            }
         }
 
         if (smartToolFormat == 0 ||
@@ -136,6 +153,8 @@ public static class SmartToolManifestService
             throw new InvalidDataException("SMART_TOOL.md is missing required frontmatter fields.");
         }
 
+        var body = normalized[(closingMarker + "\n---\n".Length)..].TrimStart('\n');
+
         return new SmartToolManifest
         {
             SmartToolFormat = smartToolFormat,
@@ -144,7 +163,9 @@ public static class SmartToolManifestService
             Description = description,
             UseCases = useCases,
             Platforms = platforms,
-            Markdown = markdown
+            Requires = requirements,
+            Markdown = markdown,
+            Body = body
         };
     }
 
@@ -173,6 +194,54 @@ public static class SmartToolManifestService
         }
     }
 
+    private static void ReadRequirements(
+        string[] lines,
+        ref int index,
+        ICollection<SmartToolRequirement> values)
+    {
+        while (index + 1 < lines.Length &&
+               lines[index + 1].StartsWith("  - name:", StringComparison.Ordinal))
+        {
+            var name = ParseValue(lines[++index], "  - name");
+            string? purpose = null;
+            string? install = null;
+            var optional = false;
+
+            while (index + 1 < lines.Length &&
+                   lines[index + 1].StartsWith("    ", StringComparison.Ordinal))
+            {
+                var line = lines[++index].TrimStart();
+                if (line.StartsWith("purpose:", StringComparison.Ordinal))
+                {
+                    purpose = ParseValue(line, "purpose");
+                }
+                else if (line.StartsWith("install:", StringComparison.Ordinal))
+                {
+                    install = ParseValue(line, "install");
+                }
+                else if (line.StartsWith("optional:", StringComparison.Ordinal))
+                {
+                    var value = ParseValue(line, "optional");
+                    if (!bool.TryParse(value, out optional))
+                    {
+                        throw new InvalidDataException(
+                            "SMART_TOOL.md requirement 'optional' fields must be boolean.");
+                    }
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(name) ||
+                string.IsNullOrWhiteSpace(purpose) ||
+                string.IsNullOrWhiteSpace(install))
+            {
+                throw new InvalidDataException(
+                    "SMART_TOOL.md requirement entries must include name, purpose, and install.");
+            }
+
+            values.Add(new SmartToolRequirement(name, purpose, install, optional));
+        }
+    }
+
     private static int ParseInt(string line, string key) =>
         int.TryParse(ParseScalar(line, key), out var value)
             ? value
@@ -180,8 +249,18 @@ public static class SmartToolManifestService
 
     private static string ParseScalar(string line, string key)
     {
-        var value = line[(key.Length + 1)..].Trim();
-        return value.Trim('"', '\'');
+        return ParseValue(line, key);
+    }
+
+    private static string ParseValue(string line, string key)
+    {
+        var prefix = key + ":";
+        if (!line.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException($"SMART_TOOL.md field '{key}' is malformed.");
+        }
+
+        return line[prefix.Length..].Trim().Trim('"', '\'');
     }
 }
 

@@ -17,6 +17,8 @@
   <ItemGroup>
     <ProjectReference Include="..\AudioTranscriber\AudioTranscriber.csproj" />
     <None Include="..\..\README.md" Pack="true" PackagePath="README.md" />
+    <None Include="..\AudioTranscriber\SMART_TOOL.md" Pack="true" PackagePath="src\AudioTranscriber\SMART_TOOL.md" />
+    <None Include="..\..\smart-tool.json" Pack="true" PackagePath="smart-tool.json" />
   </ItemGroup>
 
 </Project>

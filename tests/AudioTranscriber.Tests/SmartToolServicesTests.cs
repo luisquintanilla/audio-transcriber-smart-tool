@@ -16,7 +16,67 @@ public sealed class SmartToolServicesTests
         Assert.Contains("\"version\": \"0.1.0\"", first);
         Assert.Contains("\"useCases\"", first);
         Assert.Contains("\"platforms\"", first);
+        Assert.Contains("\"requires\"", first);
         Assert.DoesNotContain("catalogReadiness", first, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Capability_registry_exposes_all_current_commands_with_classification()
+    {
+        Assert.Equal(
+            ["manifest", "status", "doctor", "convert", "transcribe"],
+            SmartToolCapabilityRegistry.All.Select(capability => capability.Name));
+        Assert.Equal(
+            [
+                SmartToolCapabilityKind.Deterministic,
+                SmartToolCapabilityKind.Deterministic,
+                SmartToolCapabilityKind.Deterministic,
+                SmartToolCapabilityKind.Deterministic,
+                SmartToolCapabilityKind.ModelBacked
+            ],
+            SmartToolCapabilityRegistry.All.Select(capability => capability.Kind));
+    }
+
+    [Fact]
+    public void Capability_registry_renders_tool_skill_from_manifest_body()
+    {
+        var help = SmartToolCapabilityRegistry.RenderToolHelp();
+
+        Assert.Contains("<skill_content name=\"audio-transcriber\">", help);
+        Assert.Contains("# audio-transcriber", help);
+        Assert.Contains("audio-transcriber transcribe --help", help);
+        Assert.Contains("[model-backed]", help);
+        Assert.DoesNotContain("smart_tool_format:", help);
+    }
+
+    [Fact]
+    public void Capability_registry_renders_short_help_without_capability_skill_details()
+    {
+        var help = SmartToolCapabilityRegistry.RenderShortHelp();
+
+        Assert.Contains("Capabilities:", help);
+        Assert.Contains("manifest   [deterministic]", help);
+        Assert.Contains("transcribe [model-backed]", help);
+        Assert.DoesNotContain("## Arguments", help);
+    }
+
+    [Theory]
+    [InlineData("manifest")]
+    [InlineData("status")]
+    [InlineData("doctor")]
+    [InlineData("convert")]
+    [InlineData("transcribe")]
+    public void Capability_registry_skills_document_invocation_contract(string capabilityName)
+    {
+        var skill = SmartToolCapabilityRegistry.RenderCapabilityHelp(capabilityName);
+
+        Assert.Contains("## When to use", skill);
+        Assert.Contains("## Determinism", skill);
+        Assert.Contains("## Arguments", skill);
+        Assert.Contains("## Worked invocation", skill);
+        Assert.Contains("## Result", skill);
+        Assert.Contains("## Failures", skill);
+        Assert.Contains(capabilityName, skill, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -58,7 +118,7 @@ public sealed class SmartToolServicesTests
             root.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
         Assert.Equal("src/AudioTranscriber/SMART_TOOL.md", root.RootElement.GetProperty("manifest").GetString());
         Assert.Equal(
-            ["audio-transcriber"],
+            ["dotnet", "run", "--project", "src/audio-transcriber/audio-transcriber.csproj", "--no-restore", "--"],
             root.RootElement.GetProperty("cli_argv").EnumerateArray().Select(value => value.GetString()!).ToArray());
         Assert.Equal(
             ["manifest"],
@@ -66,13 +126,57 @@ public sealed class SmartToolServicesTests
     }
 
     [Fact]
-    public void Canonical_manifest_reports_whisper_net_catalog_readiness()
+    public void Descriptor_launch_recipe_targets_the_pack_as_tool_project()
+    {
+        using var root = JsonDocument.Parse(File.ReadAllText(Path.Combine(FindRepositoryRoot(), "smart-tool.json")));
+        var cliArguments = root.RootElement.GetProperty("cli_argv")
+            .EnumerateArray()
+            .Select(value => value.GetString()!)
+            .ToArray();
+
+        Assert.Equal("dotnet", cliArguments[0]);
+        Assert.Contains("--project", cliArguments);
+        Assert.Contains("src/audio-transcriber/audio-transcriber.csproj", cliArguments);
+        Assert.Contains("--no-restore", cliArguments);
+        Assert.Equal("--", cliArguments[^1]);
+    }
+
+    [Fact]
+    public void Pack_as_tool_project_carries_the_canonical_manifest_and_descriptor()
+    {
+        var root = FindRepositoryRoot();
+        var project = File.ReadAllText(
+            Path.Combine(root, "src", "audio-transcriber", "audio-transcriber.csproj"));
+        var readme = File.ReadAllText(Path.Combine(root, "README.md"));
+
+        Assert.Contains("<PackAsTool>true</PackAsTool>", project);
+        Assert.Contains("<Version>0.1.0</Version>", project);
+        Assert.Contains("PackagePath=\"src\\AudioTranscriber\\SMART_TOOL.md\"", project);
+        Assert.Contains("PackagePath=\"smart-tool.json\"", project);
+        Assert.Contains("does not consume a Git URL directly", readme);
+    }
+
+    [Fact]
+    public void Optional_agent_skill_defers_capability_details_to_tool_help()
+    {
+        var skill = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "skills", "audio-transcriber", "SKILL.md"));
+
+        Assert.Contains("name: audio-transcriber", skill);
+        Assert.Contains("dotnet audio-transcriber --help", skill);
+        Assert.Contains("does not consume a Git URL directly", skill);
+        Assert.DoesNotContain("## Arguments", skill);
+        Assert.DoesNotContain("## Failures", skill);
+    }
+
+    [Fact]
+    public void Canonical_manifest_reports_whisper_net_status()
     {
         var manifest = SmartToolManifestService.Markdown();
 
         Assert.Contains("smart_tool_format: 1", manifest);
         Assert.Contains("name: audio-transcriber", manifest);
-        Assert.Contains("**Available.**", manifest);
+        Assert.Contains("## Model integration status", manifest);
         Assert.Contains("Whisper.net", manifest);
     }
 
@@ -94,16 +198,25 @@ public sealed class SmartToolServicesTests
                     "name: audio-transcriber",
                     "version: 0.1.0",
                     "description: >",
-                    "  Convert local audio explicitly to the transcription contract and run local",
-                    "  Whisper Base transcription with deterministic timestamped transcript renderers.",
+                    "  Prepare local audio for Whisper transcription and run timestamped local",
+                    "  speech recognition with explicit deterministic conversion and diagnostics.",
                     "use_cases:",
-                    "  - Convert local audio through external FFmpeg into 16 kHz mono 16-bit PCM WAV",
-                    "  - Validate local WAV inputs against the supported 16 kHz mono contract",
-                    "  - Transcribe local speech with real timestamped Whisper Base segments",
-                    "  - Render typed transcripts as text, JSON, SRT, or WebVTT",
-                    "  - Inspect deterministic model, cache, FFmpeg, and package integration readiness",
+                    "  - Prepare local audio for speech recognition",
+                    "  - Check whether a WAV file meets the transcription input contract",
+                    "  - Produce timestamped transcripts from local speech recordings",
+                    "  - Render transcripts for people or downstream programs",
+                    "  - Check local model, cache, FFmpeg, and package readiness",
                     "platforms:",
-                    "  - windows"
+                    "  - windows",
+                    "requires:",
+                    "  - name: ffmpeg",
+                    "    purpose: Required only by the deterministic convert capability; other capabilities remain available without it.",
+                    "    optional: true",
+                    "    install: https://ffmpeg.org/download.html",
+                    "  - name: network access",
+                    "    purpose: Needed by the model-backed transcribe capability when the verified Whisper Base artifact is not already cached.",
+                    "    optional: true",
+                    "    install: https://huggingface.co/sandrohanea/whisper.net"
                 ]),
             string.Join('\n', lines[..closingMarker]));
     }
@@ -117,18 +230,32 @@ public sealed class SmartToolServicesTests
         Assert.Equal("audio-transcriber", manifest.Name);
         Assert.Equal("0.1.0", manifest.Version);
         Assert.Equal(
-            "Convert local audio explicitly to the transcription contract and run local Whisper Base transcription with deterministic timestamped transcript renderers.",
+            "Prepare local audio for Whisper transcription and run timestamped local speech recognition with explicit deterministic conversion and diagnostics.",
             manifest.Description);
         Assert.Equal(
             [
-                "Convert local audio through external FFmpeg into 16 kHz mono 16-bit PCM WAV",
-                "Validate local WAV inputs against the supported 16 kHz mono contract",
-                "Transcribe local speech with real timestamped Whisper Base segments",
-                "Render typed transcripts as text, JSON, SRT, or WebVTT",
-                "Inspect deterministic model, cache, FFmpeg, and package integration readiness"
+                "Prepare local audio for speech recognition",
+                "Check whether a WAV file meets the transcription input contract",
+                "Produce timestamped transcripts from local speech recordings",
+                "Render transcripts for people or downstream programs",
+                "Check local model, cache, FFmpeg, and package readiness"
             ],
             manifest.UseCases);
         Assert.Equal(["windows"], manifest.Platforms);
+        Assert.Equal(
+            [
+                new SmartToolRequirement(
+                    "ffmpeg",
+                    "Required only by the deterministic convert capability; other capabilities remain available without it.",
+                    "https://ffmpeg.org/download.html",
+                    true),
+                new SmartToolRequirement(
+                    "network access",
+                    "Needed by the model-backed transcribe capability when the verified Whisper Base artifact is not already cached.",
+                    "https://huggingface.co/sandrohanea/whisper.net",
+                    true)
+            ],
+            manifest.Requires);
     }
 
     [Fact]
@@ -141,16 +268,30 @@ public sealed class SmartToolServicesTests
                     "  \"smartToolFormat\": 1,",
                     "  \"name\": \"audio-transcriber\",",
                     "  \"version\": \"0.1.0\",",
-                    "  \"description\": \"Convert local audio explicitly to the transcription contract and run local Whisper Base transcription with deterministic timestamped transcript renderers.\",",
+                    "  \"description\": \"Prepare local audio for Whisper transcription and run timestamped local speech recognition with explicit deterministic conversion and diagnostics.\",",
                     "  \"useCases\": [",
-                    "    \"Convert local audio through external FFmpeg into 16 kHz mono 16-bit PCM WAV\",",
-                    "    \"Validate local WAV inputs against the supported 16 kHz mono contract\",",
-                    "    \"Transcribe local speech with real timestamped Whisper Base segments\",",
-                    "    \"Render typed transcripts as text, JSON, SRT, or WebVTT\",",
-                    "    \"Inspect deterministic model, cache, FFmpeg, and package integration readiness\"",
+                    "    \"Prepare local audio for speech recognition\",",
+                    "    \"Check whether a WAV file meets the transcription input contract\",",
+                    "    \"Produce timestamped transcripts from local speech recordings\",",
+                    "    \"Render transcripts for people or downstream programs\",",
+                    "    \"Check local model, cache, FFmpeg, and package readiness\"",
                     "  ],",
                     "  \"platforms\": [",
                     "    \"windows\"",
+                    "  ],",
+                    "  \"requires\": [",
+                    "    {",
+                    "      \"name\": \"ffmpeg\",",
+                    "      \"purpose\": \"Required only by the deterministic convert capability; other capabilities remain available without it.\",",
+                    "      \"install\": \"https://ffmpeg.org/download.html\",",
+                    "      \"optional\": true",
+                    "    },",
+                    "    {",
+                    "      \"name\": \"network access\",",
+                    "      \"purpose\": \"Needed by the model-backed transcribe capability when the verified Whisper Base artifact is not already cached.\",",
+                    "      \"install\": \"https://huggingface.co/sandrohanea/whisper.net\",",
+                    "      \"optional\": true",
+                    "    }",
                     "  ]",
                     "}"
                 ]) +

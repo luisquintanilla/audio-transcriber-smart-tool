@@ -32,15 +32,32 @@ public sealed class CliApplication
 
         if (args.Length == 0)
         {
-            await error.WriteLineAsync(Usage()).ConfigureAwait(false);
+            await error.WriteLineAsync(SmartToolCapabilityRegistry.RenderUsage()).ConfigureAwait(false);
             return 2;
         }
 
         try
         {
-            if (args is ["-h"] or ["--help"])
+            if (args is ["-h"])
             {
-                await output.WriteAsync(SmartToolManifestService.Markdown()).ConfigureAwait(false);
+                await output.WriteAsync(SmartToolCapabilityRegistry.RenderShortHelp()).ConfigureAwait(false);
+                return 0;
+            }
+
+            if (args is ["--help"])
+            {
+                await output.WriteAsync(SmartToolCapabilityRegistry.RenderToolHelp()).ConfigureAwait(false);
+                return 0;
+            }
+
+            if (args.Length == 2 &&
+                (args[1] is "-h" or "--help") &&
+                SmartToolCapabilityRegistry.TryGet(args[0], out _))
+            {
+                await output.WriteAsync(
+                    SmartToolCapabilityRegistry.RenderCapabilityHelp(
+                        args[0],
+                        terse: args[1] == "-h")).ConfigureAwait(false);
                 return 0;
             }
 
@@ -51,11 +68,7 @@ public sealed class CliApplication
                 "doctor" when args.Length == 1 => await WriteDoctorAsync(
                     output,
                     repositoryRoot ?? Directory.GetCurrentDirectory()).ConfigureAwait(false),
-                "transcribe" when args.Length == 2 && (args[1] is "-h" or "--help") =>
-                    await WriteTranscribeHelpAsync(output).ConfigureAwait(false),
                 "transcribe" => await TranscribeAsync(args[1..], output, error, cancellationToken).ConfigureAwait(false),
-                "convert" when args.Length == 2 && (args[1] is "-h" or "--help") =>
-                    await WriteConvertHelpAsync(output).ConfigureAwait(false),
                 "convert" => await ConvertAsync(args[1..], output, error, cancellationToken).ConfigureAwait(false),
                 _ => await WriteUsageErrorAsync(error).ConfigureAwait(false)
             };
@@ -98,36 +111,6 @@ public sealed class CliApplication
     private static async Task<int> WriteStatusAsync(TextWriter output)
     {
         await output.WriteAsync(SmartToolManifestService.ToJson(SmartToolManifestService.Create())).ConfigureAwait(false);
-        return 0;
-    }
-
-    private static async Task<int> WriteTranscribeHelpAsync(TextWriter output)
-    {
-        await output.WriteLineAsync(
-            """
-            Transcribe local 16 kHz mono WAV files with the configured local Whisper model.
-
-            Usage:
-              audio-transcriber transcribe --input <file.wav> [--input <file.wav>] [--format text|json|srt|webvtt] [--output <path>]
-
-            The capability is model-backed and fails explicitly when the model integration
-            is unavailable. It never prompts and never silently returns a degraded result.
-            """).ConfigureAwait(false);
-        return 0;
-    }
-
-    private static async Task<int> WriteConvertHelpAsync(TextWriter output)
-    {
-        await output.WriteLineAsync(
-            """
-            Convert local audio through an external FFmpeg executable into a 16 kHz mono 16-bit PCM WAV.
-
-            Usage:
-              audio-transcriber convert --input <path> --output <file.wav> [--ffmpeg <path>] [--force]
-
-            The input is preserved. Existing output files are not overwritten unless --force is provided.
-            FFmpeg is resolved from PATH unless --ffmpeg supplies an executable path.
-            """).ConfigureAwait(false);
         return 0;
     }
 
@@ -343,20 +326,9 @@ public sealed class CliApplication
 
     private static async Task<int> WriteUsageErrorAsync(TextWriter error)
     {
-        await error.WriteLineAsync(Usage()).ConfigureAwait(false);
+        await error.WriteLineAsync(SmartToolCapabilityRegistry.RenderUsage()).ConfigureAwait(false);
         return 2;
     }
-
-    private static string Usage() =>
-        """
-        Usage:
-          audio-transcriber -h|--help
-          audio-transcriber manifest
-          audio-transcriber status
-          audio-transcriber doctor
-          audio-transcriber convert --input <path> --output <file.wav> [--ffmpeg <path>] [--force]
-          audio-transcriber transcribe --input <file.wav> [--input <file.wav>] [--format text|json|srt|webvtt] [--output <path>]
-        """;
 
     private sealed record TranscribeOptions(
         IReadOnlyList<string> Inputs,

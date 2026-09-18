@@ -27,7 +27,7 @@ public sealed class CliApplicationTests
         Assert.Equal(0, exitCode);
         Assert.Contains("smart_tool_format: 1", output.ToString());
         Assert.Contains("name: audio-transcriber", output.ToString());
-        Assert.Contains("## Catalog readiness", output.ToString());
+        Assert.Contains("## Model integration status", output.ToString());
     }
 
     [Fact]
@@ -40,6 +40,53 @@ public sealed class CliApplicationTests
         Assert.Equal(0, exitCode);
         Assert.Contains("\"smartToolFormat\": 1", output.ToString());
         Assert.Contains("\"name\": \"audio-transcriber\"", output.ToString());
+    }
+
+    [Fact]
+    public async Task Top_level_short_help_is_terse_and_full_help_is_the_tool_skill()
+    {
+        var shortOutput = new StringWriter();
+        var fullOutput = new StringWriter();
+
+        var shortExitCode = await new CliApplication().RunAsync(["-h"], shortOutput, new StringWriter());
+        var fullExitCode = await new CliApplication().RunAsync(["--help"], fullOutput, new StringWriter());
+
+        Assert.Equal(0, shortExitCode);
+        Assert.Equal(0, fullExitCode);
+        Assert.Contains("Capabilities:", shortOutput.ToString());
+        Assert.DoesNotContain("## Arguments", shortOutput.ToString());
+        Assert.Contains("<skill_content name=\"audio-transcriber\">", fullOutput.ToString());
+        Assert.Contains("## Capabilities", fullOutput.ToString());
+        Assert.Contains("audio-transcriber transcribe --help", fullOutput.ToString());
+        Assert.DoesNotContain("smart_tool_format:", fullOutput.ToString());
+    }
+
+    [Theory]
+    [InlineData("manifest")]
+    [InlineData("status")]
+    [InlineData("doctor")]
+    [InlineData("convert")]
+    [InlineData("transcribe")]
+    public async Task Every_capability_supports_short_and_full_help(string capabilityName)
+    {
+        var shortOutput = new StringWriter();
+        var fullOutput = new StringWriter();
+
+        var shortExitCode = await new CliApplication().RunAsync(
+            [capabilityName, "-h"],
+            shortOutput,
+            new StringWriter());
+        var fullExitCode = await new CliApplication().RunAsync(
+            [capabilityName, "--help"],
+            fullOutput,
+            new StringWriter());
+
+        Assert.Equal(0, shortExitCode);
+        Assert.Equal(0, fullExitCode);
+        Assert.Contains(capabilityName, shortOutput.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("## Arguments", shortOutput.ToString());
+        Assert.Contains("## Arguments", fullOutput.ToString());
+        Assert.Contains("## Failures", fullOutput.ToString());
     }
 
     [Fact]
