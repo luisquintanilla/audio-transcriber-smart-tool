@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "1.0",
+  "id": "support-session",
+  "source": "support-session.wav",
+  "provenance": {
+    "provider": "chapter-evaluation-fixture",
+    "model": "fixture-transcript-v1",
+    "metadata": {
+      "labeler": "deterministic-fixture"
+    }
+  },
+  "segments": [
+    {
+      "id": "seg-101",
+      "sourceId": "source-101",
+      "ordinal": 0,
+      "start": "00:00:00",
+      "end": "00:00:04",
+      "text": "The support session starts with the issue summary."
+    },
+    {
+      "id": "seg-102",
+      "sourceId": "source-102",
+      "ordinal": 1,
+      "start": "00:00:04",
+      "end": "00:00:08",
+      "text": "The team confirms the reproduction steps."
+    },
+    {
+      "id": "seg-103",
+      "sourceId": "source-103",
+      "ordinal": 2,
+      "start": "00:00:12",
+      "end": "00:00:16",
+      "text": "A configuration fix is proposed."
+    },
+    {
+      "id": "seg-104",
+      "sourceId": "source-104",
+      "ordinal": 3,
+      "start": "00:00:16",
+      "end": "00:00:21",
+      "text": "The team validates the fix."
+    },
+    {
+      "id": "seg-105",
+      "sourceId": "source-105",
+      "ordinal": 4,
+      "start": "00:00:21",
+      "end": "00:00:26",
+      "text": "The session closes with follow-up actions."
+    }
+  ],
+  "expectedChapters": [
+    {
+      "id": "chapter-summary",
+      "label": "Summary",
+      "start": "00:00:00",
+      "end": "00:00:08",
+      "sourceSegmentIds": [
+        "seg-101",
+        "seg-102"
+      ]
+    },
+    {
+      "id": "chapter-fix",
+      "label": "Fix",
+      "start": "00:00:12",
+      "end": "00:00:21",
+      "sourceSegmentIds": [
+        "seg-103",
+        "seg-104"
+      ]
+    },
+    {
+      "id": "chapter-follow-up",
+      "label": "Follow-up",
+      "start": "00:00:21",
+      "end": "00:00:26",
+      "sourceSegmentIds": [
+        "seg-105"
+      ]
+    }
+  ]
+}

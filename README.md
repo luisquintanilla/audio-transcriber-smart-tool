@@ -301,6 +301,29 @@ asynchronously evaluated chapters contain their numeric model score. No
 embedding implementation, model asset, network dependency, CLI capability, or
 Smart Tool manifest entry is required.
 
+### Deterministic chapter evaluation harness
+
+`tests/AudioTranscriber.ChapterEvaluation` is a non-packable, fixture-driven
+harness for measuring chapter quality without changing the Smart Tool or core
+package. Its labeled JSON fixtures preserve source segment IDs and exact
+`TimeSpan` boundaries. The default harness injects deterministic fake embedding
+and scoring providers; it never downloads models, invokes Whisper, or loads
+Granite assets. A caller can provide another implementation of the existing
+transcript-processing seams for an explicitly managed benchmark without making
+that runtime part of the normal test path.
+
+The harness reports boundary precision, recall, and F1 using a documented
+two-second one-to-one matching tolerance; coverage is the fraction of
+source-segment duration represented by generated chapters (timing gaps are not
+content); duration constraint violations; source-ID and timestamp-semantic
+violations; and WindowDiff over source-segment windows. Reports have stable
+text and JSON forms and deterministic thresholds suitable for a later
+CI/release gate. Run the focused suite with:
+
+```powershell
+dotnet test .\tests\AudioTranscriber.ChapterEvaluation.Tests\AudioTranscriber.ChapterEvaluation.Tests.csproj --no-restore -v:minimal
+```
+
 ## Clean local-tool installation
 
 Create a package and install it into a temporary tool manifest without changing
