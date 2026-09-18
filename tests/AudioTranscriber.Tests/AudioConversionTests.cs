@@ -123,6 +123,50 @@ public sealed class AudioConversionTests
     }
 
     [Fact]
+    public async Task Force_conversion_replaces_output_symlink_without_modifying_source()
+    {
+        var input = TestAudio.CreateWav(sampleCount: 320);
+        var output = Path.Combine(Path.GetTempPath(), $"audio-transcriber-alias-{Guid.NewGuid():N}.wav");
+        try
+        {
+            try
+            {
+                File.CreateSymbolicLink(output, input);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return;
+            }
+
+            var sourceBefore = File.ReadAllBytes(input);
+            var runner = new RecordingRunner
+            {
+                OnRun = (_, arguments) =>
+                {
+                    File.Copy(arguments[Array.IndexOf(arguments.ToArray(), "-i") + 1], arguments[^1]);
+                    return new FfmpegRunResult(0, string.Empty, string.Empty);
+                }
+            };
+
+            await new AudioConversionService(runner, new FakeResolver())
+                .ConvertAsync(
+                    new AudioConversionOptions(input, output)
+                    {
+                        Force = true
+                    });
+
+            Assert.Equal(sourceBefore, File.ReadAllBytes(input));
+            Assert.Equal(sourceBefore, File.ReadAllBytes(output));
+            Assert.False(File.GetAttributes(output).HasFlag(FileAttributes.ReparsePoint));
+        }
+        finally
+        {
+            TestAudio.Delete(input);
+            TestAudio.Delete(output);
+        }
+    }
+
+    [Fact]
     public async Task Nonzero_ffmpeg_exit_is_reported_with_actionable_diagnostics()
     {
         var input = TestAudio.CreateWav();
@@ -204,12 +248,71 @@ public sealed class AudioConversionTests
                     .ConvertAsync(new AudioConversionOptions(input, output)));
 
             Assert.Contains("does not meet", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.False(File.Exists(output));
+            Assert.Empty(Directory.GetFiles(
+                Path.GetDirectoryName(output)!,
+                $".{Path.GetFileName(output)}.*.tmp.wav"));
         }
         finally
         {
             TestAudio.Delete(input);
             TestAudio.Delete(output);
             TestAudio.Delete(invalidOutputSource);
+        }
+    }
+
+    [Fact]
+    public async Task Truncated_ffmpeg_output_is_normalized_and_cleaned_up()
+    {
+        var input = TestAudio.CreateWav();
+        var output = Path.Combine(Path.GetTempPath(), $"audio-transcriber-output-{Guid.NewGuid():N}.wav");
+        var runner = new RecordingRunner
+        {
+            OnRun = (_, arguments) =>
+            {
+                File.WriteAllBytes(arguments[^1], "RIFF"u8.ToArray());
+                return new FfmpegRunResult(0, string.Empty, string.Empty);
+            }
+        };
+
+        try
+        {
+            var exception = await Assert.ThrowsAsync<AudioConversionException>(() =>
+                new AudioConversionService(runner, new FakeResolver())
+                    .ConvertAsync(new AudioConversionOptions(input, output)));
+
+            Assert.Contains("truncated WAV", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(Path.GetFileName(output), exception.Message, StringComparison.Ordinal);
+            Assert.False(File.Exists(output));
+            Assert.Empty(Directory.GetFiles(
+                Path.GetDirectoryName(output)!,
+                $".{Path.GetFileName(output)}.*.tmp.wav"));
+        }
+        finally
+        {
+            TestAudio.Delete(input);
+            TestAudio.Delete(output);
+        }
+    }
+
+    [Fact]
+    public void Metadata_reader_validates_contract_without_materializing_samples()
+    {
+        var path = TestAudio.CreateWav(sampleCount: 320);
+        try
+        {
+            var metadata = new WavAudioMetadataReader().Read(path);
+
+            Assert.Equal(Path.GetFullPath(path), metadata.SourcePath);
+            Assert.Equal(AudioRequirements.RequiredSampleRate, metadata.SampleRate);
+            Assert.Equal(AudioRequirements.RequiredChannels, metadata.Channels);
+            Assert.Equal(16, metadata.BitsPerSample);
+            Assert.Equal(320L * 2, metadata.DataBytes);
+            Assert.Equal(TimeSpan.FromSeconds(320d / AudioRequirements.RequiredSampleRate), metadata.Duration);
+        }
+        finally
+        {
+            TestAudio.Delete(path);
         }
     }
 
@@ -244,6 +347,36 @@ public sealed class AudioConversionTests
         Assert.Contains("Converted 'input.audio' to 'speech.wav'", output.ToString());
         Assert.Equal(Path.GetFullPath(@"C:\private\input.audio"), service.Options!.InputPath);
         Assert.Equal(Path.GetFullPath(@"C:\private\speech.wav"), service.Options.OutputPath);
+    }
+
+    [Fact]
+    public void Resolver_rejects_non_executable_unix_candidate()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var path = Path.Combine(Path.GetTempPath(), $"audio-transcriber-ffmpeg-{Guid.NewGuid():N}");
+        try
+        {
+            File.WriteAllText(path, "not executable");
+            File.SetUnixFileMode(
+                path,
+                UnixFileMode.UserRead |
+                UnixFileMode.UserWrite |
+                UnixFileMode.GroupRead |
+                UnixFileMode.OtherRead);
+
+            var resolution = new FfmpegExecutableResolver().Resolve(path);
+
+            Assert.False(resolution.IsAvailable);
+            Assert.Contains("not found or is not executable", resolution.Detail, StringComparison.Ordinal);
+        }
+        finally
+        {
+            TestAudio.Delete(path);
+        }
     }
 
     private sealed class FakeResolver : IFfmpegExecutableResolver

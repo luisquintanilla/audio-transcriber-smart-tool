@@ -25,8 +25,8 @@ public sealed class FfmpegExecutableResolver : IFfmpegExecutableResolver
                 ? new FfmpegExecutableResolution(
                     false,
                     null,
-                    $"FFmpeg executable '{SafePathDisplay.Basename(candidate)}' was not found. " +
-                    "Provide a valid --ffmpeg path.")
+                    $"FFmpeg executable '{SafePathDisplay.Basename(candidate)}' was not found or is not executable. " +
+                    "Provide a valid executable --ffmpeg path.")
                 : new FfmpegExecutableResolution(
                     true,
                     executablePath,
@@ -38,7 +38,7 @@ public sealed class FfmpegExecutableResolver : IFfmpegExecutableResolver
             ? new FfmpegExecutableResolution(
                 false,
                 null,
-                "FFmpeg was not found on PATH. Install ffmpeg and add it to PATH, or pass --ffmpeg <path>.")
+                "An executable FFmpeg was not found on PATH. Install ffmpeg and add it to PATH, or pass --ffmpeg <path>.")
             : new FfmpegExecutableResolution(
                 true,
                 pathExecutable,
@@ -54,7 +54,9 @@ public sealed class FfmpegExecutableResolver : IFfmpegExecutableResolver
             return FindOnPath(candidate);
         }
 
-        return File.Exists(candidate) ? Path.GetFullPath(candidate) : null;
+        return File.Exists(candidate) && IsExecutable(candidate)
+            ? Path.GetFullPath(candidate)
+            : null;
     }
 
     private static string? FindOnPath(string executableName = "ffmpeg")
@@ -80,7 +82,7 @@ public sealed class FfmpegExecutableResolver : IFfmpegExecutableResolver
 
             foreach (var candidate in candidates)
             {
-                if (File.Exists(candidate))
+                if (File.Exists(candidate) && IsExecutable(candidate))
                 {
                     return Path.GetFullPath(candidate);
                 }
@@ -88,6 +90,19 @@ public sealed class FfmpegExecutableResolver : IFfmpegExecutableResolver
         }
 
         return null;
+    }
+
+    private static bool IsExecutable(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return true;
+        }
+
+        var mode = File.GetUnixFileMode(path);
+        return mode.HasFlag(UnixFileMode.UserExecute) ||
+               mode.HasFlag(UnixFileMode.GroupExecute) ||
+               mode.HasFlag(UnixFileMode.OtherExecute);
     }
 }
 

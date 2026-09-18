@@ -56,16 +56,16 @@ public sealed class AudioConversionService : IAudioConversionService
 {
     private readonly IFfmpegExecutableResolver _executableResolver;
     private readonly IFfmpegRunner _ffmpegRunner;
-    private readonly WavAudioReader _wavReader;
+    private readonly WavAudioMetadataReader _metadataReader;
 
     public AudioConversionService(
         IFfmpegRunner? ffmpegRunner = null,
         IFfmpegExecutableResolver? executableResolver = null,
-        WavAudioReader? wavReader = null)
+        WavAudioMetadataReader? metadataReader = null)
     {
         _ffmpegRunner = ffmpegRunner ?? new ProcessFfmpegRunner();
         _executableResolver = executableResolver ?? new FfmpegExecutableResolver();
-        _wavReader = wavReader ?? new WavAudioReader();
+        _metadataReader = metadataReader ?? new WavAudioMetadataReader();
     }
 
     public async Task<AudioConversionResult> ConvertAsync(
@@ -103,80 +103,108 @@ public sealed class AudioConversionService : IAudioConversionService
             throw new FfmpegUnavailableException(resolution.Detail);
         }
 
+        string? temporaryOutputPath = CreateTemporaryOutputPath(outputPath);
         var normalizedOptions = options with
         {
             InputPath = inputPath,
-            OutputPath = outputPath
+            OutputPath = temporaryOutputPath!
         };
-        var arguments = FfmpegArguments.Build(normalizedOptions);
-        var runResult = await _ffmpegRunner
-            .RunAsync(resolution.ExecutablePath, arguments, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!runResult.Succeeded)
-        {
-            var diagnostics = RedactDiagnostics(runResult.StandardError, inputPath, outputPath);
-            var detail = string.IsNullOrWhiteSpace(diagnostics)
-                ? "FFmpeg did not provide diagnostic output."
-                : $"FFmpeg reported: {diagnostics}";
-            throw new AudioConversionException(
-                $"Audio conversion failed for '{SafePathDisplay.Basename(inputPath)}' " +
-                $"to '{SafePathDisplay.Basename(outputPath)}' with exit code {runResult.ExitCode}. {detail}");
-        }
-
-        if (!File.Exists(outputPath))
-        {
-            throw new AudioConversionException(
-                $"FFmpeg reported success but did not create '{SafePathDisplay.Basename(outputPath)}'.");
-        }
-
-        AudioClip convertedAudio;
         try
         {
-            convertedAudio = _wavReader.Load(outputPath);
-        }
-        catch (UnsupportedAudioFormatException exception)
-        {
-            throw new AudioConversionException(
-                $"FFmpeg produced '{SafePathDisplay.Basename(outputPath)}', but it does not meet the " +
-                $"{AudioRequirements.RequiredSampleRate} Hz mono 16-bit PCM WAV contract.",
-                exception);
-        }
-        catch (InvalidDataException exception)
-        {
-            throw new AudioConversionException(
-                $"FFmpeg produced an invalid WAV file at '{SafePathDisplay.Basename(outputPath)}'.",
-                exception);
-        }
+            var arguments = FfmpegArguments.Build(normalizedOptions);
+            var runResult = await _ffmpegRunner
+                .RunAsync(resolution.ExecutablePath, arguments, cancellationToken)
+                .ConfigureAwait(false);
 
-        if (convertedAudio.Format != AudioSampleFormat.Pcm16)
-        {
-            throw new AudioConversionException(
-                $"FFmpeg produced '{SafePathDisplay.Basename(outputPath)}' with sample format " +
-                $"{convertedAudio.Format}, not 16-bit PCM.");
-        }
+            if (!runResult.Succeeded)
+            {
+                var diagnostics = RedactDiagnostics(
+                    runResult.StandardError,
+                    inputPath,
+                    outputPath,
+                    temporaryOutputPath);
+                var detail = string.IsNullOrWhiteSpace(diagnostics)
+                    ? "FFmpeg did not provide diagnostic output."
+                    : $"FFmpeg reported: {diagnostics}";
+                throw new AudioConversionException(
+                    $"Audio conversion failed for '{SafePathDisplay.Basename(inputPath)}' " +
+                    $"to '{SafePathDisplay.Basename(outputPath)}' with exit code {runResult.ExitCode}. {detail}");
+            }
 
-        return new AudioConversionResult(
-            inputPath,
-            outputPath,
-            convertedAudio.SampleRate,
-            convertedAudio.Channels,
-            16,
-            new FileInfo(outputPath).Length,
-            convertedAudio.Duration);
+            if (!File.Exists(temporaryOutputPath))
+            {
+                throw new AudioConversionException(
+                    $"FFmpeg reported success but did not create '{SafePathDisplay.Basename(outputPath)}'.");
+            }
+
+            WavAudioMetadata metadata;
+            try
+            {
+                metadata = _metadataReader.Read(temporaryOutputPath);
+            }
+            catch (EndOfStreamException exception)
+            {
+                throw new AudioConversionException(
+                    $"FFmpeg produced a truncated WAV file at '{SafePathDisplay.Basename(outputPath)}'.",
+                    exception);
+            }
+            catch (UnsupportedAudioFormatException exception)
+            {
+                throw new AudioConversionException(
+                    $"FFmpeg produced '{SafePathDisplay.Basename(outputPath)}', but it does not meet the " +
+                    $"{AudioRequirements.RequiredSampleRate} Hz mono 16-bit PCM WAV contract.",
+                    exception);
+            }
+            catch (InvalidDataException exception)
+            {
+                throw new AudioConversionException(
+                    $"FFmpeg produced an invalid WAV file at '{SafePathDisplay.Basename(outputPath)}'.",
+                    exception);
+            }
+
+            File.Move(temporaryOutputPath, outputPath, overwrite: options.Force);
+            temporaryOutputPath = null;
+
+            return new AudioConversionResult(
+                inputPath,
+                outputPath,
+                metadata.SampleRate,
+                metadata.Channels,
+                metadata.BitsPerSample,
+                new FileInfo(outputPath).Length,
+                metadata.Duration);
+        }
+        finally
+        {
+            if (temporaryOutputPath is not null && File.Exists(temporaryOutputPath))
+            {
+                File.Delete(temporaryOutputPath);
+            }
+        }
     }
 
-    private static string RedactDiagnostics(string diagnostics, string inputPath, string outputPath)
+    private static string CreateTemporaryOutputPath(string outputPath)
+    {
+        var directory = Path.GetDirectoryName(outputPath) ?? Directory.GetCurrentDirectory();
+        var fileName = $".{Path.GetFileName(outputPath)}.{Guid.NewGuid():N}.tmp.wav";
+        return Path.Combine(directory, fileName);
+    }
+
+    private static string RedactDiagnostics(string diagnostics, params string?[] paths)
     {
         var redacted = diagnostics.Trim();
-        redacted = SafePathDisplay.RedactKnownPaths(
-            redacted,
-            SafePathDisplay.Basename(inputPath),
-            inputPath);
-        return SafePathDisplay.RedactKnownPaths(
-            redacted,
-            SafePathDisplay.Basename(outputPath),
-            outputPath);
+        foreach (var path in paths)
+        {
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                redacted = SafePathDisplay.RedactKnownPaths(
+                    redacted,
+                    SafePathDisplay.Basename(path),
+                    path);
+            }
+        }
+
+        return redacted;
     }
 }
 
