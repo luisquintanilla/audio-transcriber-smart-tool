@@ -72,6 +72,8 @@ does not assume or claim publication to a public NuGet feed. A .NET 10 SDK is
 required for restore, build, test, and packing. `dotnetup` is an optional SDK
 manager, not a launcher dependency; when available, use
 `dotnetup sdk install 10.0`.
+An already-packed tool invocation needs the matching .NET 10 runtime, not the
+SDK.
 
 The installed tool never stores model binaries in the package or repository.
 The first transcription requires network access to download the pinned

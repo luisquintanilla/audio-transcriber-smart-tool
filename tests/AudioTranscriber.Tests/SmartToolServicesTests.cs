@@ -209,6 +209,16 @@ public sealed class SmartToolServicesTests
     }
 
     [Fact]
+    public void Canonical_manifest_documents_sdk_outside_environment_requires()
+    {
+        var manifest = SmartToolManifestService.Create();
+
+        Assert.DoesNotContain(manifest.Requires, requirement => requirement.Name == ".NET 10 SDK");
+        Assert.Contains(".NET 10 SDK is required", manifest.Markdown);
+        Assert.Contains("dotnetup sdk install 10.0", manifest.Markdown);
+    }
+
+    [Fact]
     public void Canonical_manifest_uses_exact_yaml_frontmatter()
     {
         var normalized = SmartToolManifestService.Markdown().Replace("\r\n", "\n", StringComparison.Ordinal);
@@ -237,9 +247,6 @@ public sealed class SmartToolServicesTests
                     "platforms:",
                     "  - windows",
                     "requires:",
-                    "  - name: .NET 10 SDK",
-                    "    purpose: Required for source checkout restore, build, test, and PackAsTool packaging.",
-                    "    install: https://dotnet.microsoft.com/download/dotnet/10.0",
                     "  - name: ffmpeg",
                     "    purpose: Required only by the deterministic convert capability; other capabilities remain available without it.",
                     "    optional: true",
@@ -276,10 +283,6 @@ public sealed class SmartToolServicesTests
         Assert.Equal(
             [
                 new SmartToolRequirement(
-                    ".NET 10 SDK",
-                    "Required for source checkout restore, build, test, and PackAsTool packaging.",
-                    "https://dotnet.microsoft.com/download/dotnet/10.0"),
-                new SmartToolRequirement(
                     "ffmpeg",
                     "Required only by the deterministic convert capability; other capabilities remain available without it.",
                     "https://ffmpeg.org/download.html",
@@ -315,12 +318,6 @@ public sealed class SmartToolServicesTests
                     "    \"windows\"",
                     "  ],",
                     "  \"requires\": [",
-                    "    {",
-                    "      \"name\": \".NET 10 SDK\",",
-                    "      \"purpose\": \"Required for source checkout restore, build, test, and PackAsTool packaging.\",",
-                    "      \"install\": \"https://dotnet.microsoft.com/download/dotnet/10.0\",",
-                    "      \"optional\": false",
-                    "    },",
                     "    {",
                     "      \"name\": \"ffmpeg\",",
                     "      \"purpose\": \"Required only by the deterministic convert capability; other capabilities remain available without it.\",",

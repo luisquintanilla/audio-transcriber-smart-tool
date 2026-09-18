@@ -14,9 +14,6 @@ use_cases:
 platforms:
   - windows
 requires:
-  - name: .NET 10 SDK
-    purpose: Required for source checkout restore, build, test, and PackAsTool packaging.
-    install: https://dotnet.microsoft.com/download/dotnet/10.0
   - name: ffmpeg
     purpose: Required only by the deterministic convert capability; other capabilities remain available without it.
     optional: true
@@ -86,6 +83,9 @@ is an optional SDK manager, not a launcher dependency; when available, it can
 install the required channel with `dotnetup sdk install 10.0`. See its current
 guidance at
 `https://github.com/dotnet/sdk/blob/release/dnup/documentation/general/dotnetup/usecases/update-installations.md`.
+
+The SDK is needed for a source checkout, restore, test, or pack operation. An
+already-packed tool invocation needs the matching .NET 10 runtime, not the SDK.
 
 For an isolated installed tool, pack first and install the local `.nupkg`
 through a temporary tool manifest:

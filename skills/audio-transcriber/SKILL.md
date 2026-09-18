@@ -45,7 +45,9 @@ Pop-Location
 `dotnet tool install` does not consume a Git URL directly. Use a checkout to
 run from source or pack the checkout and install from its local package folder.
 This repository documents local installation and does not claim publication to
-a public NuGet feed.
+a public NuGet feed. Source checkout and packing require the .NET 10 SDK;
+running an already-packed tool requires the matching .NET 10 runtime, not the
+SDK.
 
 ## Use it
 
