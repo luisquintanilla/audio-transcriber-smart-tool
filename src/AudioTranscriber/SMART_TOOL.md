@@ -97,15 +97,36 @@ $installDirectory = Join-Path $env:TEMP ("audio-transcriber-install-" + [guid]::
 dotnet new tool-manifest --output $installDirectory
 Push-Location $installDirectory
 dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
-dotnet tool run audio-transcriber --help
+dotnet tool run audio-transcriber -- --help
 Pop-Location
 ```
 
-The repository documents source checkout and local package installation; it
-does not assume or claim publication to a public NuGet feed. The `.nupkg`
+Git source checkout and local package installation remain supported. The
+temporary distribution target is the owner's GitHub Packages NuGet feed,
+`https://nuget.pkg.github.com/luisquintanilla/index.json`, for package
+`audio-transcriber` version `0.1.0`, not nuget.org or the shared catalog.
+Even public GitHub NuGet packages require authenticated installation with
+`read:packages`. See the repository README's GitHub Packages installation
+section for a separate feed config and process-scoped credentials; source
+restore does not require GitHub Packages credentials. The `.nupkg`
 contains the library, the canonical `SMART_TOOL.md`, and `smart-tool.json`; no
 model binaries or FFmpeg binaries are packaged. Replace the local
 `--add-source` path with another checkout's package directory when needed.
+
+## Typed library installation
+
+The companion `AudioTranscriber` NuGet package, version `0.1.0`, is the normal
+.NET 10 library dependency. Use `PackageReference` to `AudioTranscriber` for
+typed APIs; `audio-transcriber` (with a hyphen) is a separate CLI tool package,
+not an application dependency. Both target the owner's GitHub Packages feed.
+See the README's typed library consumption section and `NuGet.Library.config`
+for authenticated restore with package source mapping: the library comes from
+GitHub, while its default Whisper dependencies come from nuget.org.
+
+`SmartToolManifestService.Create()` returns a typed manifest and
+`SmartToolManifestService.Markdown()` returns this document from an embedded
+resource, so introspection does not require source files or model downloads.
+Git checkout and direct project-reference consumption remain supported.
 
 ## Capability boundaries
 

@@ -22,10 +22,13 @@ validation is documented in `SMART_TOOL.md`.
 
 ## Source checkout
 
-`dotnet tool install` does not consume a Git URL directly. From a source
-checkout, restore and launch the PackAsTool project explicitly:
+Git installation remains supported independently of any package feed.
+`dotnet tool install` does not consume a Git URL directly. Clone the repository,
+then restore and launch the PackAsTool project explicitly:
 
 ```powershell
+git clone https://github.com/luisquintanilla/audio-transcriber-smart-tool.git
+Set-Location .\audio-transcriber-smart-tool
 dotnet restore .\AudioTranscriber.sln
 dotnet run --project .\src\audio-transcriber\audio-transcriber.csproj --no-restore -- --help
 ```
@@ -43,6 +46,158 @@ The introspection and diagnostics commands have distinct roles:
 - `manifest` prints the canonical manifest document.
 - `doctor` reports cache and integration readiness without downloading a model.
 
+## GitHub Packages installation
+
+The temporary package distribution target is **GitHub Packages**, not
+nuget.org or the shared Smart Tools Catalog:
+
+| Package ID | Version | Consumption |
+| --- | --- | --- |
+| `audio-transcriber` | `0.1.0` | CLI: `dotnet tool install` |
+| `AudioTranscriber` | `0.1.0` | Library: ordinary `PackageReference` |
+
+Both use `https://nuget.pkg.github.com/luisquintanilla/index.json`.
+The hyphen distinguishes these IDs; NuGet package IDs are case-insensitive.
+The tool bundles the library for execution but is not a library dependency.
+
+GitHub requires authentication even for public NuGet packages. Use a personal
+access token (classic) with `read:packages`, supplied securely to the current
+process as `GITHUB_PACKAGES_TOKEN`, and your GitHub login as
+`GITHUB_PACKAGES_USERNAME`. Do not put tokens in commands, source control, or
+chat. See [GitHub's NuGet authentication guidance](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-nuget-registry).
+
+Use the repository's `NuGet.GitHub.config`, or save the following as
+`NuGet.GitHub.config` in any installation directory (no Git checkout required):
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="github" value="https://nuget.pkg.github.com/luisquintanilla/index.json" />
+  </packageSources>
+</configuration>
+```
+
+Install into a local tool manifest using only that feed:
+
+```powershell
+if (-not $env:GITHUB_PACKAGES_TOKEN -or -not $env:GITHUB_PACKAGES_USERNAME) {
+    throw "Set GITHUB_PACKAGES_TOKEN and GITHUB_PACKAGES_USERNAME securely before installing."
+}
+$env:NuGetPackageSourceCredentials_github = "Username=$env:GITHUB_PACKAGES_USERNAME;Password=$env:GITHUB_PACKAGES_TOKEN;ValidAuthenticationTypes=Basic"
+try {
+    # Skip this command if the directory already has a tool manifest.
+    dotnet new tool-manifest
+    dotnet tool install audio-transcriber --version 0.1.0 --configfile .\NuGet.GitHub.config
+    dotnet tool run audio-transcriber -- --help
+} finally {
+    Remove-Item Env:NuGetPackageSourceCredentials_github
+}
+```
+
+This separate config is for installing the tool package, which bundles its
+NuGet dependencies, not restoring the source solution. The ordinary `NuGet.config`
+remains unchanged so source builds do not require GitHub credentials.
+The tool is framework-dependent and requires .NET 10.
+
+Use the `--` separator when forwarding `--help` to a local tool; otherwise the
+.NET 10 SDK prints its own `dotnet tool run` help. The README embedded in the
+initial `0.1.0` package omits this separator; use the corrected commands here.
+
+For maintainers, pack the appropriate project and publish only its new artifact
+to the feed above using securely configured local credentials with
+`write:packages`. The existing `audio-transcriber` 0.1.0 release is immutable:
+packing it for validation is not permission to republish it. A newly published
+GitHub package defaults to private; its owner must explicitly make each package
+public in **Package settings** and verify visibility. Linking the public
+repository does not make either package public. Publication is manual; no CI
+publishing workflow is provided.
+
+## Typed library consumption
+
+In a .NET 10 application, reference the **library**, not the tool:
+
+```xml
+<ItemGroup>
+  <PackageReference Include="AudioTranscriber" Version="0.1.0" />
+</ItemGroup>
+```
+
+Use `NuGet.Library.config` from this repository, or save the following in the
+application directory. It routes `AudioTranscriber` to GitHub and its normal
+Whisper dependencies to nuget.org; neither of this repository's packages is
+published to nuget.org.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="github" value="https://nuget.pkg.github.com/luisquintanilla/index.json" />
+    <add key="nuget.org" value="https://www.nuget.org/api/v2" />
+  </packageSources>
+  <packageSourceMapping>
+    <clear />
+    <packageSource key="github">
+      <package pattern="AudioTranscriber" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+```
+
+With the same securely supplied credentials described above:
+
+```powershell
+if (-not $env:GITHUB_PACKAGES_TOKEN -or -not $env:GITHUB_PACKAGES_USERNAME) {
+    throw "Set GITHUB_PACKAGES_TOKEN and GITHUB_PACKAGES_USERNAME securely before restoring."
+}
+$env:NuGetPackageSourceCredentials_github = "Username=$env:GITHUB_PACKAGES_USERNAME;Password=$env:GITHUB_PACKAGES_TOKEN;ValidAuthenticationTypes=Basic"
+try {
+    dotnet restore .\YourApp.csproj --configfile .\NuGet.Library.config
+} finally {
+    Remove-Item Env:NuGetPackageSourceCredentials_github
+}
+```
+
+Call the library directly without spawning the CLI. For example, this
+deterministic introspection code needs neither model downloads nor provider
+credentials at runtime:
+
+```csharp
+using AudioTranscriber;
+
+SmartToolManifest manifest = SmartToolManifestService.Create();
+IReadOnlyList<SmartToolRequirement> prerequisites = manifest.Requires;
+Console.WriteLine($"{manifest.Name} {manifest.Version}");
+Console.WriteLine(SmartToolManifestService.Markdown());
+```
+
+The canonical manifest is embedded in the library and available through
+`SmartToolManifestService`; callers do not need a repository checkout or a loose
+manifest file. `AudioConversionService`, `BatchTranscriptionService`, and
+`ITranscriptionEngine` expose typed processing APIs. Conversion still requires
+external FFmpeg, and real transcription still uses the verified external model
+cache. The default library package depends on `Whisper.net` and
+`Whisper.net.Runtime` 1.9.0; optional Model Garden integration remains opt-in.
+The runtime dependency's build assets flow to the consuming application so its
+architecture-specific native libraries are copied correctly. The library
+package does not repack them as flattened content files.
+
+To create the library package from Git:
+
+```powershell
+dotnet pack .\src\AudioTranscriber\AudioTranscriber.csproj --configuration Release --output .\artifacts\library
+```
+
+The library package has `lib/net10.0` assets and no CLI entry point. The CLI
+project keeps its source `ProjectReference` to the library; it does not fetch
+the published library to build. Future coordinated releases should update both
+package versions and the canonical manifest together.
+
 ## Clean local-tool installation
 
 Create a package and install it into a temporary tool manifest without changing
@@ -57,7 +212,7 @@ New-Item -ItemType Directory -Path $installDirectory | Out-Null
 dotnet new tool-manifest --output $installDirectory
 Push-Location $installDirectory
 dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
-dotnet tool run audio-transcriber --help
+dotnet tool run audio-transcriber -- --help
 dotnet tool run audio-transcriber manifest
 dotnet tool run audio-transcriber doctor
 dotnet tool run audio-transcriber convert --input .\source.audio --output .\speech.wav
@@ -65,8 +220,8 @@ dotnet tool run audio-transcriber transcribe --input $env:TEMP\audio-transcriber
 Pop-Location
 ```
 
-The repository documents source checkout and local package installation; it
-does not assume or claim publication to a public NuGet feed. A .NET 10 SDK is
+Source checkout and local package installation remain available without
+GitHub Packages authentication. A .NET 10 SDK is
 required for restore, build, test, and packing. `dotnetup` is an optional SDK
 manager, not a launcher dependency; when available, use
 `dotnetup sdk install 10.0`.

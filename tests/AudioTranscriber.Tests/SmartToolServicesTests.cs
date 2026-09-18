@@ -147,7 +147,61 @@ public sealed class SmartToolServicesTests
         Assert.Contains("PackagePath=\"src\\AudioTranscriber\\SMART_TOOL.md\"", project);
         Assert.Contains("PackagePath=\"smart-tool.json\"", project);
         Assert.Contains("does not consume a Git URL directly", readme);
-        Assert.Contains("does not assume or claim publication to a public NuGet feed", readme);
+        Assert.Contains("<RepositoryUrl>https://github.com/luisquintanilla/audio-transcriber-smart-tool</RepositoryUrl>", project);
+        Assert.Contains("Git installation remains supported", readme);
+        Assert.Contains("https://nuget.pkg.github.com/luisquintanilla/index.json", readme);
+        Assert.Contains("GitHub requires authentication even for public NuGet packages", readme);
+    }
+
+    [Fact]
+    public void Library_package_metadata_matches_manifest_and_remains_distinct_from_tool()
+    {
+        var root = FindRepositoryRoot();
+        var library = System.Xml.Linq.XDocument.Load(
+            Path.Combine(root, "src", "AudioTranscriber", "AudioTranscriber.csproj"));
+        var cli = System.Xml.Linq.XDocument.Load(
+            Path.Combine(root, "src", "audio-transcriber", "audio-transcriber.csproj"));
+        var manifest = SmartToolManifestService.Create();
+
+        Assert.Equal("AudioTranscriber", Assert.Single(library.Descendants("PackageId")).Value);
+        Assert.Equal("true", Assert.Single(library.Descendants("IsPackable")).Value);
+        Assert.Empty(library.Descendants("PackAsTool"));
+        Assert.Equal(manifest.Version, Assert.Single(library.Descendants("Version")).Value);
+        Assert.Equal(manifest.Version, Assert.Single(cli.Descendants("Version")).Value);
+        Assert.Equal("audio-transcriber", Assert.Single(cli.Descendants("PackageId")).Value);
+        Assert.Equal("luisquintanilla", Assert.Single(library.Descendants("Authors")).Value);
+        Assert.Equal(
+            "https://github.com/luisquintanilla/audio-transcriber-smart-tool",
+            Assert.Single(library.Descendants("RepositoryUrl")).Value);
+        Assert.Equal("README.md", Assert.Single(library.Descendants("PackageReadmeFile")).Value);
+        Assert.Contains(library.Descendants("None"), item =>
+            (string?)item.Attribute("PackagePath") == "README.md" &&
+            (string?)item.Attribute("Pack") == "true");
+        var runtimeDependency = Assert.Single(library.Descendants("PackageReference"),
+            item => (string?)item.Attribute("Include") == "Whisper.net.Runtime");
+        Assert.Equal("none", (string?)runtimeDependency.Attribute("PrivateAssets"));
+        Assert.Equal(
+            @"..\AudioTranscriber\AudioTranscriber.csproj",
+            (string?)Assert.Single(cli.Descendants("ProjectReference")).Attribute("Include"));
+        Assert.DoesNotContain(cli.Descendants("PackageReference"), item =>
+            (string?)item.Attribute("Include") == "AudioTranscriber");
+    }
+
+    [Fact]
+    public void Library_manifest_accessor_reads_embedded_canonical_resource()
+    {
+        var assembly = typeof(SmartToolManifestService).Assembly;
+        var resourceName = Assert.Single(assembly.GetManifestResourceNames(),
+            name => name.EndsWith(".SMART_TOOL.md", StringComparison.Ordinal));
+        using var stream = assembly.GetManifestResourceStream(resourceName);
+        Assert.NotNull(stream);
+        using var reader = new StreamReader(stream);
+        var embedded = reader.ReadToEnd();
+
+        Assert.Equal(embedded, SmartToolManifestService.Markdown());
+        Assert.Equal(embedded, SmartToolManifestService.Create().Markdown);
+        Assert.Equal("0.1.0", SmartToolManifestService.Create().Version);
+        Assert.Equal(new Version(0, 1, 0, 0), assembly.GetName().Version);
     }
 
     [Fact]

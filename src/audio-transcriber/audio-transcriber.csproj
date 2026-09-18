@@ -8,6 +8,11 @@
     <PackAsTool>true</PackAsTool>
     <PackageId>audio-transcriber</PackageId>
     <Version>0.1.0</Version>
+    <Authors>luisquintanilla</Authors>
+    <Description>Local audio preparation and Whisper speech transcription as a library-first Smart Tool.</Description>
+    <RepositoryUrl>https://github.com/luisquintanilla/audio-transcriber-smart-tool</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/luisquintanilla/audio-transcriber-smart-tool</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <ToolCommandName>audio-transcriber</ToolCommandName>
     <ImplicitUsings>enable</ImplicitUsings>

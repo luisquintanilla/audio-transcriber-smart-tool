@@ -38,14 +38,18 @@ $installDirectory = Join-Path $env:TEMP ("audio-transcriber-tool-" + [guid]::New
 dotnet new tool-manifest --output $installDirectory
 Push-Location $installDirectory
 dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
-dotnet tool run audio-transcriber --help
+dotnet tool run audio-transcriber -- --help
 Pop-Location
 ```
 
 `dotnet tool install` does not consume a Git URL directly. Use a checkout to
 run from source or pack the checkout and install from its local package folder.
-This repository documents local installation and does not claim publication to
-a public NuGet feed. Source checkout and packing require the .NET 10 SDK;
+The GitHub Packages feed also offers the `audio-transcriber` CLI tool and
+the separate `AudioTranscriber` library package, both version `0.1.0`.
+Library callers use `PackageReference` to `AudioTranscriber`, not the tool
+package. See the repository README for authenticated installation and restore;
+even public GitHub NuGet packages require authentication, and each package's
+visibility is managed separately. Source checkout and packing require the .NET 10 SDK;
 running an already-packed tool requires the matching .NET 10 runtime, not the
 SDK.
 

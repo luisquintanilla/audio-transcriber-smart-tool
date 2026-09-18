@@ -1,0 +1,11 @@
+<Project>
+  <!-- Whisper native files use dependency build assets (library) or publish output (tool).
+       Repacking their None items would flatten architecture-specific paths. -->
+  <Target Name="ExcludeDependencyContentFromPackage" BeforeTargets="_GetPackageFiles">
+    <ItemGroup>
+      <None Update="@(None)" Condition="'%(None.Pack)' == 'true' and '%(None.PackageCopyToOutput)' == 'true'">
+        <Pack>false</Pack>
+      </None>
+    </ItemGroup>
+  </Target>
+</Project>
