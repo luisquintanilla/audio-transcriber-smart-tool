@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\AudioTranscriber.TranscriptProcessing\AudioTranscriber.TranscriptProcessing.csproj" />
     <ProjectReference Include="..\..\src\audio-transcriber\audio-transcriber.csproj" />
     <ProjectReference Include="..\..\src\AudioTranscriber.TranscriptIngestion\AudioTranscriber.TranscriptIngestion.csproj" />
+    <ProjectReference Include="..\..\src\AudioTranscriber.Granite\AudioTranscriber.Granite.csproj" />
   </ItemGroup>
 
   <ItemGroup>
