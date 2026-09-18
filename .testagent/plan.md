@@ -419,3 +419,24 @@ not introduce a second embedding abstraction.
 The CLI now rejects identical normalized input/output paths before input
 processing and before the overwrite branch. The regression covers both default
 and explicit overwrite modes and verifies the source remains unchanged.
+
+# Chapter enrichment review follow-up
+
+The finalized #10 base is authoritative for lower DataIngestion, AI
+abstractions, chapter capability, and evaluation changes. This layer only
+replays the enrichment commit and keeps its provider-neutral boundaries.
+
+## Accepted review fixes
+
+1. Reject provider-configuration keys that collide after trimming. The focused
+   regression is `Options_reject_provider_configuration_keys_that_collide_after_trimming`.
+2. Stream UTF-8 JSON directly to the temporary output file instead of first
+   materializing a full serialized string and then a second full byte array.
+   `Enrichment_writer_serializes_valid_utf8_without_full_byte_array_duplication`
+   verifies bytes/schema and atomic output behavior without coupling to a
+   private implementation detail.
+
+## Validation
+
+- Focused enrichment tests: `dotnet test .\tests\AudioTranscriber.Tests\AudioTranscriber.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~ChapterEnrichment" -v:minimal`.
+- Release solution build/tests, restore, package graph/pack, and diff checks are required before pushing the rebased head.

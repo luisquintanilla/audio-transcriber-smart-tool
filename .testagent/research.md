@@ -169,3 +169,21 @@ same-file input/output paths. The correct smallest fix is the equivalent guard
 in `CliApplication.ChaptersAsync`, before overwrite checking and before reading
 the input; no changes to lower DataIngestion or embedding contracts are
 needed.
+
+# Chapter enrichment review research
+
+PR #11 has two live inline findings, both valid against the enrichment
+contracts:
+
+- `TranscriptChapterEnrichmentOptions.ToMetadata` trims provider-configuration
+  keys but used assignment, so `" a"` and `"a"` could silently overwrite.
+  The existing generation-metadata constructor already rejects duplicate keys;
+  options must match that deterministic diagnostic behavior.
+- `TranscriptChapterEnrichmentArtifactFileWriter.WriteAsync` materialized the
+  complete JSON string and then duplicated it into a full UTF-8 byte array.
+  The serializer can write directly to the temporary file's UTF-8 stream,
+  preserving deterministic JSON, cancellation, atomic replacement, and failure
+  cleanup without a second full-document allocation.
+
+The requested fixes are narrow and do not require DataIngestion, AI, provider
+runtime, package, CLI, manifest, catalog, CI, or #12 changes.

@@ -395,3 +395,27 @@ codec is promised. Transcript renderers expose only the input basename (for
 example, `speech.wav`) rather than the absolute input path. Doctor output and
 CLI/model errors use safe tokens such as `<repository>`, `<model-cache>`, and
 `<model-file>` instead of local absolute paths.
+
+## Provider-neutral chapter enrichment
+
+`TranscriptChapterEnrichmentOrchestrator` is a separate, provider-neutral
+layer over a chapter artifact. Callers inject an
+`ITranscriptChapterEnricher` for chapter summaries, keywords, optional titles,
+and source-segment evidence references. An optional
+`ITranscriptOverallSummaryAssembler` receives only the ordered chapter
+summaries; it never receives or reprocesses the full transcript. The
+`TranscriptChapterEnrichmentDocument` preserves source provenance,
+chapter-generation metadata, chapter IDs, source IDs, timestamps, boundaries,
+and deterministic chapter order while keeping enrichment output separate from
+the timestamp/chapter artifact.
+
+Enrichment output is schema version `1.0`. The default `FailFast` policy
+rejects missing, invalid, or provider-failed chapter results. The explicit
+`PreservePartial` policy records `missing` and `failed` chapter statuses,
+retains successful results, and can assemble a partial overall summary from
+successful chapters. `TranscriptChapterEnrichmentArtifactFileWriter` uses a
+temporary file and atomic move, refuses accidental overwrite, and removes
+partial files on cancellation or write failure. This layer contains no model
+runtime, network access, model download, CLI command, manifest entry, or
+package publication change; deterministic fake providers are used by the
+offline test suite.
