@@ -163,3 +163,21 @@ The identical input/output path review is valid. The guard is implemented at
 the CLI boundary before overwrite checks and input reads, with regression
 coverage for both default and `--overwrite` modes. No lower PR files or
 abstractions were changed.
+
+# Chapter enrichment review follow-up
+
+## Thread classifications
+
+| Live thread | Classification | Evidence/action |
+|---|---|---|
+| Trimmed provider-configuration key collisions | Valid; accepted | Added explicit duplicate-after-trim rejection and focused regression `Options_reject_provider_configuration_keys_that_collide_after_trimming`. |
+| Full-document string plus byte-array allocation | Valid; accepted | Reworked the writer to stream deterministic UTF-8 JSON directly to the temporary file and added `Enrichment_writer_serializes_valid_utf8_without_full_byte_array_duplication`, which asserts output bytes/schema and atomic behavior rather than implementation details. |
+
+No thread was invalid or deferred, so no shovel-ready issue was required.
+
+## Required validation after rebase
+
+Run focused and full Release tests, restore/build with 0 warnings/errors,
+package graph/pack checks, and `git diff --check`. Reply to and resolve both
+accepted inline threads only after the rebased commit is pushed and the
+worktree is clean.
