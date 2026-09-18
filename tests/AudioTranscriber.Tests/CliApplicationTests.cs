@@ -32,15 +32,16 @@ public sealed class CliApplicationTests
     }
 
     [Fact]
-    public async Task Status_command_exposes_deterministic_frontmatter_json_separately()
+    public async Task Status_command_is_not_exposed()
     {
         var output = new StringWriter();
+        var error = new StringWriter();
 
-        var exitCode = await new CliApplication().RunAsync(["status"], output, new StringWriter());
+        var exitCode = await new CliApplication().RunAsync(["status"], output, error);
 
-        Assert.Equal(0, exitCode);
-        Assert.Contains("\"smartToolFormat\": 1", output.ToString());
-        Assert.Contains("\"name\": \"audio-transcriber\"", output.ToString());
+        Assert.Equal(2, exitCode);
+        Assert.Empty(output.ToString());
+        Assert.Contains("Usage:", error.ToString());
     }
 
     [Fact]
@@ -55,6 +56,10 @@ public sealed class CliApplicationTests
         Assert.Equal(0, shortExitCode);
         Assert.Equal(0, fullExitCode);
         Assert.Contains("Capabilities:", shortOutput.ToString());
+        Assert.Contains("Introspection and diagnostics:", shortOutput.ToString());
+        Assert.Contains("Audio processing:", shortOutput.ToString());
+        Assert.Contains("Speech recognition:", shortOutput.ToString());
+        Assert.DoesNotContain("status", shortOutput.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("## Arguments", shortOutput.ToString());
         Assert.Contains("<skill_content name=\"audio-transcriber\">", fullOutput.ToString());
         Assert.Contains("## Capabilities", fullOutput.ToString());
@@ -64,7 +69,6 @@ public sealed class CliApplicationTests
 
     [Theory]
     [InlineData("manifest")]
-    [InlineData("status")]
     [InlineData("doctor")]
     [InlineData("convert")]
     [InlineData("transcribe")]

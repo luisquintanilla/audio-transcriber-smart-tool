@@ -6,30 +6,13 @@ namespace AudioTranscriber.Tests;
 public sealed class SmartToolServicesTests
 {
     [Fact]
-    public void Manifest_reads_canonical_frontmatter_in_stable_json()
-    {
-        var first = SmartToolManifestService.ToJson(SmartToolManifestService.Create());
-        var second = SmartToolManifestService.ToJson(SmartToolManifestService.Create());
-
-        Assert.Equal(first, second);
-        Assert.Contains("\"smartToolFormat\": 1", first);
-        Assert.Contains("\"name\": \"audio-transcriber\"", first);
-        Assert.Contains("\"version\": \"0.1.0\"", first);
-        Assert.Contains("\"useCases\"", first);
-        Assert.Contains("\"platforms\"", first);
-        Assert.Contains("\"requires\"", first);
-        Assert.DoesNotContain("catalogReadiness", first, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
     public void Capability_registry_exposes_all_current_commands_with_classification()
     {
         Assert.Equal(
-            ["manifest", "status", "doctor", "convert", "transcribe"],
+            ["manifest", "doctor", "convert", "transcribe"],
             SmartToolCapabilityRegistry.All.Select(capability => capability.Name));
         Assert.Equal(
             [
-                SmartToolCapabilityKind.Deterministic,
                 SmartToolCapabilityKind.Deterministic,
                 SmartToolCapabilityKind.Deterministic,
                 SmartToolCapabilityKind.Deterministic,
@@ -63,7 +46,6 @@ public sealed class SmartToolServicesTests
 
     [Theory]
     [InlineData("manifest")]
-    [InlineData("status")]
     [InlineData("doctor")]
     [InlineData("convert")]
     [InlineData("transcribe")]
@@ -188,7 +170,7 @@ public sealed class SmartToolServicesTests
     }
 
     [Fact]
-    public void Canonical_manifest_reports_whisper_net_status()
+    public void Canonical_manifest_reports_whisper_net_integration()
     {
         var manifest = SmartToolManifestService.Markdown();
 
@@ -199,12 +181,11 @@ public sealed class SmartToolServicesTests
     }
 
     [Fact]
-    public void Canonical_manifest_defines_manifest_status_and_doctor_semantics()
+    public void Canonical_manifest_defines_manifest_and_doctor_semantics()
     {
         var manifest = SmartToolManifestService.Markdown();
 
         Assert.Contains("`manifest` prints the canonical `SMART_TOOL.md` document", manifest);
-        Assert.Contains("`status` prints the manifest frontmatter as stable machine-readable JSON", manifest);
         Assert.Contains("`doctor` checks cache placement and local integration readiness", manifest);
     }
 
@@ -294,52 +275,6 @@ public sealed class SmartToolServicesTests
                     true)
             ],
             manifest.Requires);
-    }
-
-    [Fact]
-    public void Manifest_json_has_canonical_property_order_and_payload()
-    {
-        var expected = string.Join(
-                Environment.NewLine,
-                [
-                    "{",
-                    "  \"smartToolFormat\": 1,",
-                    "  \"name\": \"audio-transcriber\",",
-                    "  \"version\": \"0.1.0\",",
-                    "  \"description\": \"Prepare local audio for Whisper transcription and run timestamped local speech recognition with explicit deterministic conversion and diagnostics.\",",
-                    "  \"useCases\": [",
-                    "    \"Prepare local audio for speech recognition\",",
-                    "    \"Check whether a WAV file meets the transcription input contract\",",
-                    "    \"Produce timestamped transcripts from local speech recordings\",",
-                    "    \"Render transcripts for people or downstream programs\",",
-                    "    \"Check local model, cache, FFmpeg, and package readiness\"",
-                    "  ],",
-                    "  \"platforms\": [",
-                    "    \"windows\"",
-                    "  ],",
-                    "  \"requires\": [",
-                    "    {",
-                    "      \"name\": \"ffmpeg\",",
-                    "      \"purpose\": \"Required only by the deterministic convert capability; other capabilities remain available without it.\",",
-                    "      \"install\": \"https://ffmpeg.org/download.html\",",
-                    "      \"optional\": true",
-                    "    },",
-                    "    {",
-                    "      \"name\": \"network access\",",
-                    "      \"purpose\": \"Needed by the model-backed transcribe capability when the verified Whisper Base artifact is not already cached.\",",
-                    "      \"install\": \"https://huggingface.co/sandrohanea/whisper.net\",",
-                    "      \"optional\": true",
-                    "    }",
-                    "  ]",
-                    "}"
-                ]) +
-            Environment.NewLine;
-
-        var first = SmartToolManifestService.ToJson(SmartToolManifestService.Create());
-        var second = SmartToolManifestService.ToJson(SmartToolManifestService.Create());
-
-        Assert.Equal(expected, first);
-        Assert.Equal(first, second);
     }
 
     [Fact]

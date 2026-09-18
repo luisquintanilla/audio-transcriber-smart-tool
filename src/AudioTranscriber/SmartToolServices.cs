@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace AudioTranscriber;
 
 public static class SmartToolPaths
@@ -58,18 +56,6 @@ public static class SmartToolManifestService
     public static string Markdown() => Manifest.Value.Markdown;
 
     public static string Body() => Manifest.Value.Body;
-
-    public static string ToJson(SmartToolManifest manifest)
-    {
-        ArgumentNullException.ThrowIfNull(manifest);
-        return JsonSerializer.Serialize(
-            manifest,
-            new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            }) + Environment.NewLine;
-    }
 
     private static SmartToolManifest Parse()
     {

@@ -53,15 +53,14 @@ audio-transcriber --help
 audio-transcriber transcribe --help
 ```
 
-The deterministic capabilities are `manifest`, `status`, `doctor`, and
-`convert`. `transcribe` is model-backed local inference. The library APIs are
+The deterministic capabilities are `manifest`, `doctor`, and `convert`.
+`transcribe` is model-backed local inference. The library APIs are
 the composable surface for callers that need typed values instead of CLI text.
 
 ## Command semantics
 
 - `manifest` prints the canonical `SMART_TOOL.md` document shipped by the
   library.
-- `status` prints the manifest frontmatter as stable machine-readable JSON.
 - `doctor` checks cache placement and local integration readiness without
   downloading a model. It returns exit code `0` when the cache policy is
   healthy; blocked optional integrations are reported in its JSON rather than

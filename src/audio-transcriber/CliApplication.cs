@@ -65,7 +65,6 @@ public sealed class CliApplication
             return args[0].ToLowerInvariant() switch
             {
                 "manifest" when args.Length == 1 => await WriteManifestAsync(output).ConfigureAwait(false),
-                "status" when args.Length == 1 => await WriteStatusAsync(output).ConfigureAwait(false),
                 "doctor" when args.Length == 1 => await WriteDoctorAsync(
                     output,
                     repositoryRoot ?? Directory.GetCurrentDirectory()).ConfigureAwait(false),
@@ -106,12 +105,6 @@ public sealed class CliApplication
     private static async Task<int> WriteManifestAsync(TextWriter output)
     {
         await output.WriteAsync(SmartToolManifestService.Markdown()).ConfigureAwait(false);
-        return 0;
-    }
-
-    private static async Task<int> WriteStatusAsync(TextWriter output)
-    {
-        await output.WriteAsync(SmartToolManifestService.ToJson(SmartToolManifestService.Create())).ConfigureAwait(false);
         return 0;
     }
 

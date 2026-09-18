@@ -76,47 +76,6 @@ public static class SmartToolCapabilityRegistry
             """
         ),
         new(
-            "status",
-            SmartToolCapabilityKind.Deterministic,
-            "Print the manifest frontmatter as stable JSON.",
-            $"{SmartToolPaths.ToolId} status",
-            """
-            # audio-transcriber status
-
-            ## When to use
-
-            Use this capability when a caller needs machine-readable identity,
-            version, use-case, platform, and prerequisite metadata before invoking
-            another capability.
-
-            ## Determinism
-
-            This capability is deterministic. It reads the library-embedded manifest
-            and does not use a model, network, credentials, or local files.
-
-            ## Arguments
-
-            No arguments are accepted.
-
-            ## Worked invocation
-
-            ```text
-            audio-transcriber status
-            ```
-
-            ## Result
-
-            Stdout contains stable, indented JSON derived from the canonical
-            manifest frontmatter. Stderr is empty on success. The exit code is `0`.
-
-            ## Failures
-
-            Extra arguments are a usage failure and return exit code `2`. A missing or
-            invalid embedded manifest returns a non-zero integration failure with an
-            actionable error.
-            """
-        ),
-        new(
             "doctor",
             SmartToolCapabilityKind.Deterministic,
             "Inspect model-cache, Whisper.net, FFmpeg, and package readiness.",

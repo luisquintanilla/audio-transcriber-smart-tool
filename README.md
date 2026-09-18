@@ -6,7 +6,7 @@ capability; `audio-transcriber` is only a non-interactive CLI adapter.
 
 See [`src/AudioTranscriber/SMART_TOOL.md`](src/AudioTranscriber/SMART_TOOL.md)
 for the manifest, source/package launch paths, capability boundaries,
-Whisper.net provenance, cache policy, and optional Model Garden package status.
+Whisper.net provenance, cache policy, and optional Model Garden package details.
 
 ## Build and test
 
@@ -38,10 +38,9 @@ dotnet run --project .\src\audio-transcriber\audio-transcriber.csproj --no-resto
 dotnet run --project .\src\audio-transcriber\audio-transcriber.csproj --no-restore -- transcribe --help
 ```
 
-The deterministic commands have distinct roles:
+The introspection and diagnostics commands have distinct roles:
 
 - `manifest` prints the canonical manifest document.
-- `status` prints its frontmatter as stable JSON.
 - `doctor` reports cache and integration readiness without downloading a model.
 
 ## Clean local-tool installation
@@ -60,7 +59,6 @@ Push-Location $installDirectory
 dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
 dotnet tool run audio-transcriber --help
 dotnet tool run audio-transcriber manifest
-dotnet tool run audio-transcriber status
 dotnet tool run audio-transcriber doctor
 dotnet tool run audio-transcriber convert --input .\source.audio --output .\speech.wav
 dotnet tool run audio-transcriber transcribe --input $env:TEMP\audio-transcriber-jfk.wav --format json
