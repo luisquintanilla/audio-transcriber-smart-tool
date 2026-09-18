@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AudioTranscriber.Cli;
 
 namespace AudioTranscriber.Tests;
 
@@ -40,7 +41,7 @@ public sealed class SmartToolServicesTests
     [Fact]
     public void Capability_registry_renders_tool_skill_from_manifest_body()
     {
-        var help = SmartToolCapabilityRegistry.RenderToolHelp();
+        var help = SmartToolHelpRenderer.RenderToolHelp();
 
         Assert.Contains("<skill_content name=\"audio-transcriber\">", help);
         Assert.Contains("# audio-transcriber", help);
@@ -52,7 +53,7 @@ public sealed class SmartToolServicesTests
     [Fact]
     public void Capability_registry_renders_short_help_without_capability_skill_details()
     {
-        var help = SmartToolCapabilityRegistry.RenderShortHelp();
+        var help = SmartToolHelpRenderer.RenderShortHelp();
 
         Assert.Contains("Capabilities:", help);
         Assert.Contains("manifest   [deterministic]", help);
@@ -68,7 +69,7 @@ public sealed class SmartToolServicesTests
     [InlineData("transcribe")]
     public void Capability_registry_skills_document_invocation_contract(string capabilityName)
     {
-        var skill = SmartToolCapabilityRegistry.RenderCapabilityHelp(capabilityName);
+        var skill = SmartToolHelpRenderer.RenderCapabilityHelp(capabilityName);
 
         Assert.Contains("## When to use", skill);
         Assert.Contains("## Determinism", skill);
@@ -154,6 +155,23 @@ public sealed class SmartToolServicesTests
         Assert.Contains("PackagePath=\"src\\AudioTranscriber\\SMART_TOOL.md\"", project);
         Assert.Contains("PackagePath=\"smart-tool.json\"", project);
         Assert.Contains("does not consume a Git URL directly", readme);
+        Assert.Contains("does not assume or claim publication to a public NuGet feed", readme);
+    }
+
+    [Fact]
+    public void Cli_adapter_lives_in_the_pack_as_tool_project_not_the_reusable_library()
+    {
+        var root = FindRepositoryRoot();
+        var libraryProject = File.ReadAllText(
+            Path.Combine(root, "src", "AudioTranscriber", "AudioTranscriber.csproj"));
+        var cliProject = File.ReadAllText(
+            Path.Combine(root, "src", "audio-transcriber", "audio-transcriber.csproj"));
+
+        Assert.False(File.Exists(Path.Combine(root, "src", "AudioTranscriber", "CliApplication.cs")));
+        Assert.True(File.Exists(Path.Combine(root, "src", "audio-transcriber", "CliApplication.cs")));
+        Assert.True(File.Exists(Path.Combine(root, "src", "audio-transcriber", "SmartToolHelpRenderer.cs")));
+        Assert.DoesNotContain("CliApplication", libraryProject, StringComparison.Ordinal);
+        Assert.Contains("<ProjectReference Include=\"..\\AudioTranscriber\\AudioTranscriber.csproj\" />", cliProject);
     }
 
     [Fact]
@@ -163,7 +181,7 @@ public sealed class SmartToolServicesTests
             Path.Combine(FindRepositoryRoot(), "skills", "audio-transcriber", "SKILL.md"));
 
         Assert.Contains("name: audio-transcriber", skill);
-        Assert.Contains("dotnet audio-transcriber --help", skill);
+        Assert.Contains("audio-transcriber --help", skill);
         Assert.Contains("does not consume a Git URL directly", skill);
         Assert.DoesNotContain("## Arguments", skill);
         Assert.DoesNotContain("## Failures", skill);
@@ -178,6 +196,16 @@ public sealed class SmartToolServicesTests
         Assert.Contains("name: audio-transcriber", manifest);
         Assert.Contains("## Model integration status", manifest);
         Assert.Contains("Whisper.net", manifest);
+    }
+
+    [Fact]
+    public void Canonical_manifest_defines_manifest_status_and_doctor_semantics()
+    {
+        var manifest = SmartToolManifestService.Markdown();
+
+        Assert.Contains("`manifest` prints the canonical `SMART_TOOL.md` document", manifest);
+        Assert.Contains("`status` prints the manifest frontmatter as stable machine-readable JSON", manifest);
+        Assert.Contains("`doctor` checks cache placement and local integration readiness", manifest);
     }
 
     [Fact]
@@ -209,6 +237,9 @@ public sealed class SmartToolServicesTests
                     "platforms:",
                     "  - windows",
                     "requires:",
+                    "  - name: .NET 10 SDK",
+                    "    purpose: Required for source checkout restore, build, test, and PackAsTool packaging.",
+                    "    install: https://dotnet.microsoft.com/download/dotnet/10.0",
                     "  - name: ffmpeg",
                     "    purpose: Required only by the deterministic convert capability; other capabilities remain available without it.",
                     "    optional: true",
@@ -245,6 +276,10 @@ public sealed class SmartToolServicesTests
         Assert.Equal(
             [
                 new SmartToolRequirement(
+                    ".NET 10 SDK",
+                    "Required for source checkout restore, build, test, and PackAsTool packaging.",
+                    "https://dotnet.microsoft.com/download/dotnet/10.0"),
+                new SmartToolRequirement(
                     "ffmpeg",
                     "Required only by the deterministic convert capability; other capabilities remain available without it.",
                     "https://ffmpeg.org/download.html",
@@ -280,6 +315,12 @@ public sealed class SmartToolServicesTests
                     "    \"windows\"",
                     "  ],",
                     "  \"requires\": [",
+                    "    {",
+                    "      \"name\": \".NET 10 SDK\",",
+                    "      \"purpose\": \"Required for source checkout restore, build, test, and PackAsTool packaging.\",",
+                    "      \"install\": \"https://dotnet.microsoft.com/download/dotnet/10.0\",",
+                    "      \"optional\": false",
+                    "    },",
                     "    {",
                     "      \"name\": \"ffmpeg\",",
                     "      \"purpose\": \"Required only by the deterministic convert capability; other capabilities remain available without it.\",",

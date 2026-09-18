@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AudioTranscriber.Cli;
 
 namespace AudioTranscriber.Tests;
 

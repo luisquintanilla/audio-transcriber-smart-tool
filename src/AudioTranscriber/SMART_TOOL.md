@@ -14,6 +14,9 @@ use_cases:
 platforms:
   - windows
 requires:
+  - name: .NET 10 SDK
+    purpose: Required for source checkout restore, build, test, and PackAsTool packaging.
+    install: https://dotnet.microsoft.com/download/dotnet/10.0
   - name: ffmpeg
     purpose: Required only by the deterministic convert capability; other capabilities remain available without it.
     optional: true
@@ -28,8 +31,9 @@ requires:
 
 `audio-transcriber` is a .NET 10 library-first Smart Tool for local audio
 preparation and model-backed speech transcription. The `AudioTranscriber`
-library owns every capability; the CLI only parses arguments, adapts file
-paths, writes stdout/stderr, and returns exit codes.
+library owns every capability and its self-description; the CLI only parses
+arguments, adapts file paths, renders library-provided help, writes
+stdout/stderr, and returns exit codes.
 
 ## When to reach for it
 
@@ -56,15 +60,32 @@ The deterministic capabilities are `manifest`, `status`, `doctor`, and
 `convert`. `transcribe` is model-backed local inference. The library APIs are
 the composable surface for callers that need typed values instead of CLI text.
 
+## Command semantics
+
+- `manifest` prints the canonical `SMART_TOOL.md` document shipped by the
+  library.
+- `status` prints the manifest frontmatter as stable machine-readable JSON.
+- `doctor` checks cache placement and local integration readiness without
+  downloading a model. It returns exit code `0` when the cache policy is
+  healthy; blocked optional integrations are reported in its JSON rather than
+  treated as command failures.
+
 ## Source checkout and local package install
 
 `dotnet tool install` does not install directly from a Git URL. From a source
-checkout, restore and run the PackAsTool project explicitly:
+checkout, a .NET 10 SDK is required to restore and run the PackAsTool project
+explicitly:
 
 ```powershell
 dotnet restore .\AudioTranscriber.sln
 dotnet run --project .\src\audio-transcriber\audio-transcriber.csproj --no-restore -- --help
 ```
+
+The SDK can be installed from the official .NET download page above. `dotnetup`
+is an optional SDK manager, not a launcher dependency; when available, it can
+install the required channel with `dotnetup sdk install 10.0`. See its current
+guidance at
+`https://github.com/dotnet/sdk/blob/release/dnup/documentation/general/dotnetup/usecases/update-installations.md`.
 
 For an isolated installed tool, pack first and install the local `.nupkg`
 through a temporary tool manifest:
@@ -77,14 +98,15 @@ $installDirectory = Join-Path $env:TEMP ("audio-transcriber-install-" + [guid]::
 dotnet new tool-manifest --output $installDirectory
 Push-Location $installDirectory
 dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
-dotnet audio-transcriber --help
+dotnet tool run audio-transcriber --help
 Pop-Location
 ```
 
-The `.nupkg` contains the library, the canonical `SMART_TOOL.md`, and
-`smart-tool.json`; no model binaries or FFmpeg binaries are packaged. Replace
-the local `--add-source` path with another checkout's package directory when
-needed.
+The repository documents source checkout and local package installation; it
+does not assume or claim publication to a public NuGet feed. The `.nupkg`
+contains the library, the canonical `SMART_TOOL.md`, and `smart-tool.json`; no
+model binaries or FFmpeg binaries are packaged. Replace the local
+`--add-source` path with another checkout's package directory when needed.
 
 ## Capability boundaries
 

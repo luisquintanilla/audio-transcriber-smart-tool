@@ -1,7 +1,8 @@
-using System.Text.Json;
 using System.Security;
+using System.Text.Json;
+using AudioTranscriber;
 
-namespace AudioTranscriber;
+namespace AudioTranscriber.Cli;
 
 public sealed class CliApplication
 {
@@ -32,7 +33,7 @@ public sealed class CliApplication
 
         if (args.Length == 0)
         {
-            await error.WriteLineAsync(SmartToolCapabilityRegistry.RenderUsage()).ConfigureAwait(false);
+            await error.WriteLineAsync(SmartToolHelpRenderer.RenderUsage()).ConfigureAwait(false);
             return 2;
         }
 
@@ -40,13 +41,13 @@ public sealed class CliApplication
         {
             if (args is ["-h"])
             {
-                await output.WriteAsync(SmartToolCapabilityRegistry.RenderShortHelp()).ConfigureAwait(false);
+                await output.WriteAsync(SmartToolHelpRenderer.RenderShortHelp()).ConfigureAwait(false);
                 return 0;
             }
 
             if (args is ["--help"])
             {
-                await output.WriteAsync(SmartToolCapabilityRegistry.RenderToolHelp()).ConfigureAwait(false);
+                await output.WriteAsync(SmartToolHelpRenderer.RenderToolHelp()).ConfigureAwait(false);
                 return 0;
             }
 
@@ -55,7 +56,7 @@ public sealed class CliApplication
                 SmartToolCapabilityRegistry.TryGet(args[0], out _))
             {
                 await output.WriteAsync(
-                    SmartToolCapabilityRegistry.RenderCapabilityHelp(
+                    SmartToolHelpRenderer.RenderCapabilityHelp(
                         args[0],
                         terse: args[1] == "-h")).ConfigureAwait(false);
                 return 0;
@@ -326,7 +327,7 @@ public sealed class CliApplication
 
     private static async Task<int> WriteUsageErrorAsync(TextWriter error)
     {
-        await error.WriteLineAsync(SmartToolCapabilityRegistry.RenderUsage()).ConfigureAwait(false);
+        await error.WriteLineAsync(SmartToolHelpRenderer.RenderUsage()).ConfigureAwait(false);
         return 2;
     }
 

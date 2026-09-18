@@ -38,6 +38,12 @@ dotnet run --project .\src\audio-transcriber\audio-transcriber.csproj --no-resto
 dotnet run --project .\src\audio-transcriber\audio-transcriber.csproj --no-restore -- transcribe --help
 ```
 
+The deterministic commands have distinct roles:
+
+- `manifest` prints the canonical manifest document.
+- `status` prints its frontmatter as stable JSON.
+- `doctor` reports cache and integration readiness without downloading a model.
+
 ## Clean local-tool installation
 
 Create a package and install it into a temporary tool manifest without changing
@@ -52,7 +58,7 @@ New-Item -ItemType Directory -Path $installDirectory | Out-Null
 dotnet new tool-manifest --output $installDirectory
 Push-Location $installDirectory
 dotnet tool install audio-transcriber --version 0.1.0 --add-source $packageDirectory
-dotnet audio-transcriber --help
+dotnet tool run audio-transcriber --help
 dotnet tool run audio-transcriber manifest
 dotnet tool run audio-transcriber status
 dotnet tool run audio-transcriber doctor
@@ -60,6 +66,12 @@ dotnet tool run audio-transcriber convert --input .\source.audio --output .\spee
 dotnet tool run audio-transcriber transcribe --input $env:TEMP\audio-transcriber-jfk.wav --format json
 Pop-Location
 ```
+
+The repository documents source checkout and local package installation; it
+does not assume or claim publication to a public NuGet feed. A .NET 10 SDK is
+required for restore, build, test, and packing. `dotnetup` is an optional SDK
+manager, not a launcher dependency; when available, use
+`dotnetup sdk install 10.0`.
 
 The installed tool never stores model binaries in the package or repository.
 The first transcription requires network access to download the pinned

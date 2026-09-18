@@ -1,3 +1,5 @@
+using AudioTranscriber.Cli;
+
 namespace AudioTranscriber.Tests;
 
 public sealed class AudioConversionTests
