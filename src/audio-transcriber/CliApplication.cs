@@ -310,22 +310,15 @@ public sealed class CliApplication
 
         var input = new FileInfo(inputPath);
         var output = new FileInfo(outputPath);
-        if (!input.Exists || !output.Exists)
-        {
-            return false;
-        }
-
-        var resolvedInputPath =
-            input.ResolveLinkTarget(returnFinalTarget: true)?.FullName ??
-            input.FullName;
-        var resolvedOutputPath =
-            output.ResolveLinkTarget(returnFinalTarget: true)?.FullName ??
-            output.FullName;
         return string.Equals(
-            resolvedInputPath,
-            resolvedOutputPath,
+            ResolveLinkTargetPath(input),
+            ResolveLinkTargetPath(output),
             StringComparison.OrdinalIgnoreCase);
     }
+
+    private static string ResolveLinkTargetPath(FileInfo file) =>
+        file.ResolveLinkTarget(returnFinalTarget: true)?.FullName ??
+        file.FullName;
 
     private static bool TryParseTranscribeOptions(
         string[] args,
