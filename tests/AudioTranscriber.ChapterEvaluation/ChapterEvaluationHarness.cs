@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.AI;
 using AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.ChapterEvaluation;
@@ -11,15 +12,15 @@ namespace AudioTranscriber.ChapterEvaluation;
 /// </summary>
 public sealed class ChapterEvaluationHarness
 {
-    private readonly ITranscriptEmbeddingProvider embeddingProvider;
+    private readonly IEmbeddingGenerator<TextContent, Embedding<float>> embeddingGenerator;
     private readonly ITranscriptChunkScoringProvider scoringProvider;
 
     public ChapterEvaluationHarness(
-        ITranscriptEmbeddingProvider? embeddingProvider = null,
+        IEmbeddingGenerator<TextContent, Embedding<float>>? embeddingGenerator = null,
         ITranscriptChunkScoringProvider? scoringProvider = null)
     {
-        this.embeddingProvider = embeddingProvider
-            ?? new DeterministicTranscriptEmbeddingProvider();
+        this.embeddingGenerator = embeddingGenerator
+            ?? new DeterministicTranscriptEmbeddingGenerator();
         this.scoringProvider = scoringProvider
             ?? new DeterministicTranscriptChunkScoringProvider();
     }
@@ -49,14 +50,16 @@ public sealed class ChapterEvaluationHarness
         var results = new List<ChapterEvaluationCaseResult>(fixtureValues.Length);
         var generator = new TranscriptChapterArtifactGenerator();
         var chunkBuilder = new TranscriptChunkBuilder(
-            embeddingProvider,
+            embeddingGenerator,
             scoringProvider);
         foreach (var fixture in fixtureValues)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var ingestionDocument = TranscriptIngestionAdapter.ToIngestionDocument(
+                fixture.Transcript);
             var chunkResult = await chunkBuilder
                 .BuildAsync(
-                    fixture.Transcript,
+                    ingestionDocument,
                     options.ToChunkingOptions(),
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -256,22 +259,37 @@ public sealed class ChapterEvaluationReport
 /// <summary>
 /// A local deterministic embedding provider for evaluation runs.
 /// </summary>
-public sealed class DeterministicTranscriptEmbeddingProvider
-    : ITranscriptEmbeddingProvider
+public sealed class DeterministicTranscriptEmbeddingGenerator
+    : IEmbeddingGenerator<TextContent, Embedding<float>>
 {
-    public ValueTask<TranscriptEmbeddingResponse> EmbedAsync(
-        TranscriptEmbeddingRequest request,
+    public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+        IEnumerable<TextContent> values,
+        EmbeddingGenerationOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(values);
         cancellationToken.ThrowIfCancellationRequested();
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(request.Text));
-        var values = Enumerable.Range(0, 8)
-            .Select(
-                index =>
-                    ((hash[index] / 255f) * 2f) - 1f)
-            .ToArray();
-        return ValueTask.FromResult(new TranscriptEmbeddingResponse(values));
+        var inputs = values.ToArray();
+        var embeddings = new GeneratedEmbeddings<Embedding<float>>(inputs.Length);
+        foreach (var input in inputs)
+        {
+            ArgumentNullException.ThrowIfNull(input);
+            cancellationToken.ThrowIfCancellationRequested();
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input.Text));
+            var vector = Enumerable.Range(0, 8)
+                .Select(index => ((hash[index] / 255f) * 2f) - 1f)
+                .ToArray();
+            embeddings.Add(new Embedding<float>(vector));
+        }
+
+        return Task.FromResult(embeddings);
+    }
+
+    public object? GetService(Type serviceType, object? serviceKey = null) =>
+        serviceKey is null && serviceType.IsInstanceOfType(this) ? this : null;
+
+    public void Dispose()
+    {
     }
 }
 

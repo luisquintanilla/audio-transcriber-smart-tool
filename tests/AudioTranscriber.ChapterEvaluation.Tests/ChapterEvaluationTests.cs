@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using AudioTranscriber.ChapterEvaluation;
 
 namespace AudioTranscriber.ChapterEvaluation.Tests;
@@ -27,7 +29,7 @@ public sealed class ChapterEvaluationTests
         var fixtures = LoadFixtures();
         var options = new ChapterEvaluationOptions
         {
-            MinimumChapterDuration = TimeSpan.FromSeconds(1),
+            MinimumChapterDuration = TimeSpan.FromSeconds(5),
             MaximumChapterDuration = TimeSpan.FromSeconds(10),
             BoundaryTolerance = TimeSpan.FromSeconds(2),
             Thresholds = new ChapterEvaluationThresholds
@@ -128,6 +130,105 @@ public sealed class ChapterEvaluationTests
         Assert.Equal(0.5d, metrics.BoundaryPrecision);
         Assert.Equal(0.5d, metrics.BoundaryRecall);
         Assert.Equal(0.5d, metrics.BoundaryF1);
+    }
+
+    [Fact]
+    public void BoundaryMetrics_MaximizeMatchesIndependentOfPredictionOrder()
+    {
+        var fixture = LoadInlineFixture(
+            new[]
+            {
+                new
+                {
+                    id = "seg-a",
+                    ordinal = 0,
+                    start = "00:00:00",
+                    end = "00:00:05",
+                    text = "first"
+                },
+                new
+                {
+                    id = "seg-b",
+                    ordinal = 1,
+                    start = "00:00:05",
+                    end = "00:00:10",
+                    text = "second"
+                },
+                new
+                {
+                    id = "seg-c",
+                    ordinal = 2,
+                    start = "00:00:10",
+                    end = "00:00:14",
+                    text = "third"
+                },
+                new
+                {
+                    id = "seg-d",
+                    ordinal = 3,
+                    start = "00:00:14",
+                    end = "00:00:18",
+                    text = "fourth"
+                }
+            },
+            new[]
+            {
+                new
+                {
+                    id = "chapter-a",
+                    label = "A",
+                    start = "00:00:00",
+                    end = "00:00:10",
+                    sourceSegmentIds = new[] { "seg-a", "seg-b" }
+                },
+                new
+                {
+                    id = "chapter-b",
+                    label = "B",
+                    start = "00:00:10",
+                    end = "00:00:14",
+                    sourceSegmentIds = new[] { "seg-c" }
+                },
+                new
+                {
+                    id = "chapter-c",
+                    label = "C",
+                    start = "00:00:14",
+                    end = "00:00:18",
+                    sourceSegmentIds = new[] { "seg-d" }
+                }
+            });
+        var predictions = new[]
+        {
+            new ChapterEvaluationPrediction(
+                "prediction-a",
+                TimeSpan.Zero,
+                TimeSpan.FromSeconds(10),
+                new[] { "seg-a", "seg-b" }),
+            new ChapterEvaluationPrediction(
+                "prediction-b",
+                TimeSpan.FromSeconds(12),
+                TimeSpan.FromSeconds(14),
+                new[] { "seg-c" }),
+            new ChapterEvaluationPrediction(
+                "prediction-c",
+                TimeSpan.FromSeconds(10),
+                TimeSpan.FromSeconds(18),
+                new[] { "seg-d" })
+        };
+
+        var metrics = ChapterEvaluationMetricCalculator.Evaluate(
+            fixture,
+            predictions,
+            new ChapterEvaluationOptions
+            {
+                BoundaryTolerance = TimeSpan.FromSeconds(2)
+            });
+
+        Assert.Equal(2, metrics.MatchedBoundaryCount);
+        Assert.Equal(1d, metrics.BoundaryPrecision);
+        Assert.Equal(1d, metrics.BoundaryRecall);
+        Assert.Equal(1d, metrics.BoundaryF1);
     }
 
     [Fact]
@@ -272,6 +373,174 @@ public sealed class ChapterEvaluationTests
         Assert.Contains("Unsupported chapter evaluation schema version", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void FixtureLoader_RejectsChapterTimestampMismatch()
+    {
+        var exception = Assert.Throws<ArgumentException>(
+            () => LoadInlineFixture(
+                new[]
+                {
+                    new
+                    {
+                        id = "seg-1",
+                        ordinal = 0,
+                        start = "00:00:00",
+                        end = "00:00:05",
+                        text = "one"
+                    }
+                },
+                new[]
+                {
+                    new
+                    {
+                        id = "chapter-1",
+                        label = "One",
+                        start = "00:00:01",
+                        end = "00:00:05",
+                        sourceSegmentIds = new[] { "seg-1" }
+                    }
+                }));
+
+        Assert.Contains(
+            "timestamps must match",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FixtureLoader_RejectsUnorderedChapterSegments()
+    {
+        var exception = Assert.Throws<ArgumentException>(
+            () => LoadInlineFixture(
+                new[]
+                {
+                    new
+                    {
+                        id = "seg-1",
+                        ordinal = 0,
+                        start = "00:00:00",
+                        end = "00:00:05",
+                        text = "one"
+                    },
+                    new
+                    {
+                        id = "seg-2",
+                        ordinal = 1,
+                        start = "00:00:05",
+                        end = "00:00:10",
+                        text = "two"
+                    }
+                },
+                new[]
+                {
+                    new
+                    {
+                        id = "chapter-1",
+                        label = "One",
+                        start = "00:00:00",
+                        end = "00:00:10",
+                        sourceSegmentIds = new[] { "seg-2", "seg-1" }
+                    }
+                }));
+
+        Assert.Contains(
+            "listed in transcript order",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FixtureLoader_RejectsIncompleteChapterCoverage()
+    {
+        var exception = Assert.Throws<ArgumentException>(
+            () => LoadInlineFixture(
+                new[]
+                {
+                    new
+                    {
+                        id = "seg-1",
+                        ordinal = 0,
+                        start = "00:00:00",
+                        end = "00:00:05",
+                        text = "one"
+                    },
+                    new
+                    {
+                        id = "seg-2",
+                        ordinal = 1,
+                        start = "00:00:05",
+                        end = "00:00:10",
+                        text = "two"
+                    }
+                },
+                new[]
+                {
+                    new
+                    {
+                        id = "chapter-1",
+                        label = "One",
+                        start = "00:00:00",
+                        end = "00:00:05",
+                        sourceSegmentIds = new[] { "seg-1" }
+                    }
+                }));
+
+        Assert.Contains(
+            "do not cover transcript segment(s): seg-2",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FixtureLoader_RejectsDuplicateChapterCoverage()
+    {
+        var exception = Assert.Throws<ArgumentException>(
+            () => LoadInlineFixture(
+                new[]
+                {
+                    new
+                    {
+                        id = "seg-1",
+                        ordinal = 0,
+                        start = "00:00:00",
+                        end = "00:00:05",
+                        text = "one"
+                    },
+                    new
+                    {
+                        id = "seg-2",
+                        ordinal = 1,
+                        start = "00:00:05",
+                        end = "00:00:10",
+                        text = "two"
+                    }
+                },
+                new[]
+                {
+                    new
+                    {
+                        id = "chapter-1",
+                        label = "One",
+                        start = "00:00:00",
+                        end = "00:00:05",
+                        sourceSegmentIds = new[] { "seg-1" }
+                    },
+                    new
+                    {
+                        id = "chapter-2",
+                        label = "Two",
+                        start = "00:00:00",
+                        end = "00:00:05",
+                        sourceSegmentIds = new[] { "seg-1" }
+                    }
+                }));
+
+        Assert.Contains(
+            "more than once across the fixture",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
     private static ChapterEvaluationFixture[] LoadFixtures()
     {
         return new[]
@@ -288,5 +557,23 @@ public sealed class ChapterEvaluationTests
             "Fixtures",
             name);
         return ChapterEvaluationFixtureLoader.Load(path);
+    }
+
+    private static ChapterEvaluationFixture LoadInlineFixture(
+        IEnumerable<object> segments,
+        IEnumerable<object> expectedChapters)
+    {
+        var json = JsonSerializer.Serialize(
+            new
+            {
+                schemaVersion = "1.0",
+                id = "inline-fixture",
+                source = "inline-fixture.wav",
+                provenance = new { provider = "test", model = "test" },
+                segments = segments.ToArray(),
+                expectedChapters = expectedChapters.ToArray()
+            });
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        return ChapterEvaluationFixtureLoader.Load(stream);
     }
 }

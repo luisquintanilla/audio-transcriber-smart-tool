@@ -57,6 +57,23 @@ public sealed class ChapterEvaluationFixture
         var knownSegmentIds = transcript.Segments
             .Select(segment => segment.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var duplicateSegmentIds = transcript.Segments
+            .GroupBy(segment => segment.Id, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        if (duplicateSegmentIds.Length > 0)
+        {
+            throw new ArgumentException(
+                $"Fixture transcript contains duplicate segment ID(s): " +
+                $"{string.Join(", ", duplicateSegmentIds)}.",
+                nameof(segments));
+        }
+
+        var expectedChapterIds = new HashSet<string>(StringComparer.Ordinal);
+        var referencedSegmentIds = new HashSet<string>(StringComparer.Ordinal);
+        var previousLastOrdinal = -1;
         for (var index = 0; index < expectedValues.Length; index++)
         {
             var chapter = expectedValues[index]
@@ -64,11 +81,77 @@ public sealed class ChapterEvaluationFixture
                     "Expected chapter boundaries cannot contain null entries.",
                     nameof(expectedChapters));
 
-            if (chapter.SourceSegmentIds.Any(
-                    segmentId => !knownSegmentIds.Contains(segmentId)))
+            if (!expectedChapterIds.Add(chapter.Id))
             {
                 throw new ArgumentException(
-                    $"Expected chapter '{chapter.Id}' references an unknown source segment.",
+                    $"Fixture contains duplicate expected chapter ID '{chapter.Id}'.",
+                    nameof(expectedChapters));
+            }
+
+            var chapterSegments = new List<TranscriptSegment>(
+                chapter.SourceSegmentIds.Count);
+            foreach (var segmentId in chapter.SourceSegmentIds)
+            {
+                if (!knownSegmentIds.Contains(segmentId))
+                {
+                    throw new ArgumentException(
+                        $"Expected chapter '{chapter.Id}' references an unknown " +
+                        $"source segment '{segmentId}'.",
+                        nameof(expectedChapters));
+                }
+
+                if (!referencedSegmentIds.Add(segmentId))
+                {
+                    throw new ArgumentException(
+                        $"Expected chapter '{chapter.Id}' references source segment " +
+                        $"'{segmentId}' more than once across the fixture.",
+                        nameof(expectedChapters));
+                }
+
+                chapterSegments.Add(
+                    transcript.Segments.First(segment => segment.Id == segmentId));
+            }
+
+            for (var segmentIndex = 1;
+                 segmentIndex < chapterSegments.Count;
+                 segmentIndex++)
+            {
+                var previous = chapterSegments[segmentIndex - 1];
+                var current = chapterSegments[segmentIndex];
+                if (current.OriginalOrdinal <= previous.OriginalOrdinal)
+                {
+                    throw new ArgumentException(
+                        $"Expected chapter '{chapter.Id}' source segments must be " +
+                        "listed in transcript order.",
+                        nameof(expectedChapters));
+                }
+
+                if (current.Start != previous.End)
+                {
+                    throw new ArgumentException(
+                        $"Expected chapter '{chapter.Id}' cannot span a timing gap " +
+                        $"between source segments '{previous.Id}' and '{current.Id}'.",
+                        nameof(expectedChapters));
+                }
+            }
+
+            var firstSegment = chapterSegments[0];
+            var lastSegment = chapterSegments[^1];
+            if (chapter.Start != firstSegment.Start ||
+                chapter.End != lastSegment.End)
+            {
+                throw new ArgumentException(
+                    $"Expected chapter '{chapter.Id}' timestamps must match its " +
+                    $"referenced source range ({firstSegment.Start:c} to " +
+                    $"{lastSegment.End:c}).",
+                    nameof(expectedChapters));
+            }
+
+            if (firstSegment.OriginalOrdinal <= previousLastOrdinal)
+            {
+                throw new ArgumentException(
+                    $"Expected chapter '{chapter.Id}' source segments must follow " +
+                    "the previous expected chapter.",
                     nameof(expectedChapters));
             }
 
@@ -78,6 +161,20 @@ public sealed class ChapterEvaluationFixture
                     "Expected chapter boundaries must be ordered and non-overlapping.",
                     nameof(expectedChapters));
             }
+
+            previousLastOrdinal = lastSegment.OriginalOrdinal;
+        }
+
+        var missingSegmentIds = knownSegmentIds
+            .Except(referencedSegmentIds, StringComparer.Ordinal)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        if (missingSegmentIds.Length > 0)
+        {
+            throw new ArgumentException(
+                "Expected chapters do not cover transcript segment(s): " +
+                $"{string.Join(", ", missingSegmentIds)}.",
+                nameof(expectedChapters));
         }
 
         Id = id.Trim();
@@ -137,6 +234,13 @@ public sealed record ExpectedChapterBoundary
         {
             throw new ArgumentException(
                 "Expected chapters must reference at least one source segment.",
+                nameof(sourceSegmentIds));
+        }
+
+        if (ids.Distinct(StringComparer.Ordinal).Count() != ids.Length)
+        {
+            throw new ArgumentException(
+                "Expected chapters cannot reference the same source segment more than once.",
                 nameof(sourceSegmentIds));
         }
 
@@ -206,7 +310,8 @@ public static class ChapterEvaluationFixtureLoader
                     Require(segment.Text, "segments[].text"),
                     ParseTimestamp(segment.Start, "segments[].start"),
                     ParseTimestamp(segment.End, "segments[].end"),
-                    segment.Ordinal,
+                    segment.Ordinal ?? throw new InvalidDataException(
+                        "Fixture field 'segments[].ordinal' is required."),
                     NormalizeOptional(segment.SourceId),
                     NormalizeOptional(segment.Id),
                     NormalizeOptional(segment.Speaker),
@@ -306,7 +411,7 @@ public static class ChapterEvaluationFixtureLoader
 
         public string? SourceId { get; init; }
 
-        public int Ordinal { get; init; }
+        public int? Ordinal { get; init; }
 
         public string? Start { get; init; }
 

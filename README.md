@@ -313,12 +313,18 @@ transcript-processing seams for an explicitly managed benchmark without making
 that runtime part of the normal test path.
 
 The harness reports boundary precision, recall, and F1 using a documented
-two-second one-to-one matching tolerance; coverage is the fraction of
-source-segment duration represented by generated chapters (timing gaps are not
-content); duration constraint violations; source-ID and timestamp-semantic
-violations; and WindowDiff over source-segment windows. Reports have stable
-text and JSON forms and deterministic thresholds suitable for a later
-CI/release gate. Run the focused suite with:
+two-second one-to-one matching tolerance. Boundaries are sorted before an
+order-preserving earliest-feasible match; for ordered one-dimensional
+boundaries this is maximum-cardinality and does not depend on prediction
+enumeration order. Fixture chapters must reference every transcript segment
+exactly once, in ordinal order, with chapter timestamps matching the first and
+last referenced segment; timing gaps are allowed only between chapters.
+Coverage is the fraction of source-segment duration represented by generated
+chapters (timing gaps are not content); the report also includes duration
+constraint violations, source-ID and timestamp-semantic violations, and
+WindowDiff over source-segment windows. Reports have stable text and JSON forms
+and deterministic thresholds suitable for a later CI/release gate. Run the
+focused suite with:
 
 ```powershell
 dotnet test .\tests\AudioTranscriber.ChapterEvaluation.Tests\AudioTranscriber.ChapterEvaluation.Tests.csproj --no-restore -v:minimal

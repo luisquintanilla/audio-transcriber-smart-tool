@@ -419,39 +419,46 @@ public static class ChapterEvaluationMetricCalculator
         return true;
     }
 
+    /// <summary>
+    /// Matches sorted boundary sequences in order using the earliest feasible
+    /// pair. For one-dimensional ordered boundaries with a symmetric tolerance,
+    /// consuming the earliest feasible pair is maximum-cardinality: skipping it
+    /// cannot make a later expected or predicted boundary more matchable.
+    /// </summary>
     private static int MatchBoundaries(
         IReadOnlyList<TimeSpan> expected,
         IReadOnlyList<TimeSpan> predicted,
         TimeSpan tolerance)
     {
-        var matched = new bool[expected.Count];
+        var orderedExpected = expected
+            .OrderBy(value => value)
+            .ToArray();
+        var orderedPredicted = predicted
+            .OrderBy(value => value)
+            .ToArray();
+        var expectedIndex = 0;
+        var predictedIndex = 0;
         var count = 0;
-        foreach (var prediction in predicted)
+        while (expectedIndex < orderedExpected.Length &&
+               predictedIndex < orderedPredicted.Length)
         {
-            var match = -1;
-            var distance = double.MaxValue;
-            for (var index = 0; index < expected.Count; index++)
+            var difference =
+                orderedPredicted[predictedIndex] - orderedExpected[expectedIndex];
+            if (difference < -tolerance)
             {
-                if (matched[index])
-                {
-                    continue;
-                }
-
-                var candidateDistance = Math.Abs(
-                    (prediction - expected[index]).TotalSeconds);
-                if (candidateDistance <= tolerance.TotalSeconds &&
-                    candidateDistance < distance)
-                {
-                    match = index;
-                    distance = candidateDistance;
-                }
+                predictedIndex++;
+                continue;
             }
 
-            if (match >= 0)
+            if (difference > tolerance)
             {
-                matched[match] = true;
-                count++;
+                expectedIndex++;
+                continue;
             }
+
+            count++;
+            expectedIndex++;
+            predictedIndex++;
         }
 
         return count;
