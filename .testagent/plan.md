@@ -17,7 +17,7 @@ preview2 higher `SemanticSimilarityChunker` was not vendored because its
 for transcript timing and provenance. No provider, model, CLI, manifest, or
 higher DataIngestion pipeline dependency was added. The focused
 chunking/artifact/ingestion run passes 54 tests; the Release solution build has
-0 warnings and 0 errors. The Release solution test run passed 209 tests with 1
+0 warnings and 0 errors. The Release solution test run passed 210 tests with 1
 pre-existing opt-in model smoke test skipped and 1 unrelated cross-platform
 path-display assertion failing.
 

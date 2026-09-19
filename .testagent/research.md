@@ -10,8 +10,8 @@ timing, provenance, minimum-duration repartitioning, deterministic ordering,
 and chapter metadata. The higher preview2 `SemanticSimilarityChunker` was not
 vendored because its `IngestionChunk` output cannot preserve source element
 identity. Focused boundary/chunk/artifact tests pass 54; the Release build is
-green, and the full run passed 209 tests with 1 existing opt-in model test
-skipped and 1 unrelated cross-platform path-display assertion failing.
+green, and the full run passed 210 tests with 1 existing opt-in model test
+skipped.
 
 # Test Generation Research
 

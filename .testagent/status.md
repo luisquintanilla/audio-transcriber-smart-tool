@@ -107,9 +107,8 @@ dotnet test .\AudioTranscriber.sln
 The initial scoped and full builds/tests stopped at compilation while the
 production declarations were absent. After implementing the contracts and builder, the focused
 chunking/artifact/ingestion run passed 54 tests. The final Release solution
-build completed with 0 warnings and 0 errors. The final Release solution test
-run passed 209 tests with 1 pre-existing opt-in model smoke test skipped and 1
-unrelated cross-platform path-display assertion failing.
+build completed with 0 warnings and 0 errors. The final Release solution test run passed 210 tests with 1 pre-existing
+opt-in model smoke test skipped.
 
 The initial compile blockers were limited to the production declarations added
 by this PR:
