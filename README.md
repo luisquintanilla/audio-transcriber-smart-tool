@@ -404,3 +404,69 @@ partial files on cancellation or write failure. This layer contains no model
 runtime, network access, model download, CLI command, manifest entry, or
 package publication change; deterministic fake providers are used by the
 offline test suite.
+
+### Optional Microsoft Foundry Local enrichment
+
+`src/AudioTranscriber.FoundryLocal` is a separately packaged adapter
+(`AudioTranscriber.FoundryLocal`) for the provider-neutral enrichment
+contracts. It references the optional Microsoft Foundry Local SDK and adapts
+its native chat session to the vendored `Microsoft.Extensions.AI.IChatClient`,
+`ChatMessage`, `ChatOptions`, `ChatResponse`, and `ChatResponseUpdate`
+abstractions. The core `AudioTranscriber` and
+`AudioTranscriber.TranscriptProcessing` packages do not acquire those
+Foundry dependencies.
+
+The model alias or model ID is required and is never guessed. The adapter
+discovers the local catalog, validates cached and loaded readiness, and reports
+the available models, external cache location, and stable diagnostic code
+when the runtime or requested model is unavailable. Foundry Local model files
+and runtime state remain in its external cache; they are not packaged with
+this repository. Downloads are disabled by default and require
+`AllowModelDownload = true`. Inference stays in the SDK-managed local runtime,
+with no silent cloud fallback or remote endpoint.
+
+```csharp
+using AudioTranscriber.FoundryLocal;
+using AudioTranscriber.TranscriptProcessing;
+
+var modelAlias = Environment.GetEnvironmentVariable(
+    "AUDIO_TRANSCRIBER_FOUNDRY_LOCAL_MODEL")
+    ?? throw new InvalidOperationException("Choose a local model alias explicitly.");
+await using var provider = new FoundryLocalEnrichmentProvider(
+    new FoundryLocalEnrichmentOptions(modelAlias),
+    new FoundryLocalSdkRuntime());
+
+var enrichment = await new TranscriptChapterEnrichmentOrchestrator(
+        provider,
+        provider)
+    .EnrichAsync(
+        chapterArtifact,
+        provider.CreateProcessingOptions(
+            TranscriptChapterEnrichmentFailurePolicy.PreservePartial,
+            includeOverallSummary: true));
+```
+
+The adapter sends chapter prompts with exact source-segment evidence and
+schema-versioned JSON output. Its overall-summary prompt contains only
+successful chapter summaries and IDs, so the full transcript is not
+reprocessed. The default solution tests use fake runtime/chat clients and do
+not download models or require a running local service. The opt-in test is
+enabled with `AUDIO_TRANSCRIBER_FOUNDRY_LOCAL_MODEL`; if that explicitly
+requested runtime or model is unavailable, it fails with the readiness
+diagnostic rather than falling back elsewhere.
+
+The `IChatClient` streaming surface is implemented as one response converted
+to one or more standard `ChatResponseUpdate` values because the current
+Foundry Local native SDK path used here is non-streaming. Source-linked
+evidence, chapter IDs, partial/fail-fast policy, and enrichment provenance
+remain provider-neutral transcript contracts rather than being forced into
+the generic chat abstraction.
+
+The adapter coordinates disposal with active enrichment calls and makes
+repeated/concurrent disposal safe. It tracks model-load ownership across
+adapter instances: a model that was already loaded by another caller is
+borrowed and is not unloaded by this provider, while adapter-acquired loads
+are reference-counted and unloaded only after the final lease is released.
+Because `FoundryLocalManager` is process-global, the adapter serializes
+initialization and rejects incompatible application/cache configuration or
+unverifiable external initialization instead of silently reusing it.
