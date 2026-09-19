@@ -99,6 +99,44 @@ public sealed class GraniteAssetIntegrityTests
     }
 
     [Fact]
+    public void Tokenizer_PermissionFailureReportsStableDiagnostic()
+    {
+        using var temporary = new GraniteTestDirectory();
+        var path = Path.Combine(temporary.Path, GraniteModelMetadata.TokenizerFileName);
+        File.WriteAllBytes(path, [1, 2, 3, 4]);
+
+        var exception = Assert.Throws<GraniteModelAssetException>(
+            () => new GraniteSentencePieceTokenizer(
+                path,
+                GraniteModelMetadata.MaxTokens,
+                _ => throw new UnauthorizedAccessException(path)));
+
+        Assert.Equal(GraniteDiagnosticCode.IncompatibleAsset, exception.DiagnosticCode);
+        Assert.Equal(GraniteAssetKind.Tokenizer, exception.AssetKind);
+        Assert.Null(exception.InnerException);
+        Assert.DoesNotContain(path, exception.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Tokenizer_SecurityFailureReportsStableDiagnostic()
+    {
+        using var temporary = new GraniteTestDirectory();
+        var path = Path.Combine(temporary.Path, GraniteModelMetadata.TokenizerFileName);
+        File.WriteAllBytes(path, [1, 2, 3, 4]);
+
+        var exception = Assert.Throws<GraniteModelAssetException>(
+            () => new GraniteSentencePieceTokenizer(
+                path,
+                GraniteModelMetadata.MaxTokens,
+                _ => throw new System.Security.SecurityException(path)));
+
+        Assert.Equal(GraniteDiagnosticCode.IncompatibleAsset, exception.DiagnosticCode);
+        Assert.Equal(GraniteAssetKind.Tokenizer, exception.AssetKind);
+        Assert.Null(exception.InnerException);
+        Assert.DoesNotContain(path, exception.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task AssetVerification_PermissionDeniedIsWrappedAndPathRedacted()
     {
         using var temporary = new GraniteTestDirectory();

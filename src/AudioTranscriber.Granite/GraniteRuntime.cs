@@ -8,7 +8,17 @@ public sealed class GraniteSentencePieceTokenizer : IGraniteTokenizer, IDisposab
 {
     private readonly Tokenizer tokenizer;
 
-    public GraniteSentencePieceTokenizer(string tokenizerPath, int maxTokens = GraniteModelMetadata.MaxTokens)
+    public GraniteSentencePieceTokenizer(
+        string tokenizerPath,
+        int maxTokens = GraniteModelMetadata.MaxTokens)
+        : this(tokenizerPath, maxTokens, null)
+    {
+    }
+
+    internal GraniteSentencePieceTokenizer(
+        string tokenizerPath,
+        int maxTokens,
+        Func<string, Stream>? openStream)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tokenizerPath);
         if (!File.Exists(tokenizerPath))
@@ -21,7 +31,7 @@ public sealed class GraniteSentencePieceTokenizer : IGraniteTokenizer, IDisposab
 
         try
         {
-            using var stream = File.OpenRead(tokenizerPath);
+            using var stream = (openStream ?? File.OpenRead)(tokenizerPath);
             tokenizer = SentencePieceTokenizer.Create(
                 stream,
                 true,
@@ -30,7 +40,9 @@ public sealed class GraniteSentencePieceTokenizer : IGraniteTokenizer, IDisposab
         catch (Exception exception) when (
             exception is IOException or
             InvalidDataException or
-            ArgumentException)
+            ArgumentException or
+            UnauthorizedAccessException or
+            System.Security.SecurityException)
         {
             throw new GraniteModelAssetException(
                 GraniteDiagnosticCode.IncompatibleAsset,
