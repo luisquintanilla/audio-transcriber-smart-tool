@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -47,6 +48,19 @@ public sealed class ChapterEvaluationHarness
                 nameof(fixtures));
         }
 
+        var duplicateFixtureIds = fixtureValues
+            .GroupBy(fixture => fixture.Id, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToArray();
+        if (duplicateFixtureIds.Length > 0)
+        {
+            throw new ArgumentException(
+                "Fixture IDs must be unique within an evaluation run. Duplicate " +
+                $"ID(s): {string.Join(", ", duplicateFixtureIds)}.",
+                nameof(fixtures));
+        }
+
         var results = new List<ChapterEvaluationCaseResult>(fixtureValues.Length);
         var generator = new TranscriptChapterArtifactGenerator();
         var chunkBuilder = new TranscriptChunkBuilder(
@@ -81,6 +95,7 @@ public sealed class ChapterEvaluationHarness
                     fixture.Id,
                     fixture.SchemaVersion,
                     metrics,
+                    CreateProviderSignalDigest(chunkResult),
                     CreateFailures(fixture.Id, metrics, options.Thresholds)));
         }
 
@@ -88,6 +103,35 @@ public sealed class ChapterEvaluationHarness
             ChapterEvaluationReport.CurrentSchemaVersion,
             options,
             results);
+    }
+
+    /// <summary>
+    /// Digests the provider-derived window scores and semantic similarities.
+    /// Segmentation itself is structural, so this digest is the only part of
+    /// the report that changes when an embedding or scoring provider changes.
+    /// </summary>
+    private static string CreateProviderSignalDigest(TranscriptChunkResult result)
+    {
+        var builder = new StringBuilder();
+        foreach (var window in result.Windows.Where(window => !window.IsGap))
+        {
+            builder.Append(window.Id).Append('\u001f');
+            builder
+                .Append(
+                    window.Score?.ToString("R", CultureInfo.InvariantCulture)
+                    ?? "null")
+                .Append('\u001f');
+            builder
+                .Append(
+                    window.SemanticSimilarity?.ToString(
+                        "R",
+                        CultureInfo.InvariantCulture)
+                    ?? "null")
+                .Append('\u001e');
+        }
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
+        return Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
     }
 
     private static IReadOnlyList<string> CreateFailures(
@@ -99,29 +143,29 @@ public sealed class ChapterEvaluationHarness
         if (metrics.BoundaryF1 < thresholds.MinimumBoundaryF1)
         {
             failures.Add(
-                $"{fixtureId}: boundary F1 {metrics.BoundaryF1:0.000} " +
-                $"is below {thresholds.MinimumBoundaryF1:0.000}.");
+                $"{fixtureId}: boundary F1 {Ratio(metrics.BoundaryF1)} " +
+                $"is below {Ratio(thresholds.MinimumBoundaryF1)}.");
         }
 
         if (metrics.CoverageRatio < thresholds.MinimumCoverage)
         {
             failures.Add(
-                $"{fixtureId}: coverage {metrics.CoverageRatio:0.000} " +
-                $"is below {thresholds.MinimumCoverage:0.000}.");
+                $"{fixtureId}: coverage {Ratio(metrics.CoverageRatio)} " +
+                $"is below {Ratio(thresholds.MinimumCoverage)}.");
         }
 
         if (metrics.WindowDiff > thresholds.MaximumWindowDiff)
         {
             failures.Add(
-                $"{fixtureId}: WindowDiff {metrics.WindowDiff:0.000} " +
-                $"exceeds {thresholds.MaximumWindowDiff:0.000}.");
+                $"{fixtureId}: WindowDiff {Ratio(metrics.WindowDiff)} " +
+                $"exceeds {Ratio(thresholds.MaximumWindowDiff)}.");
         }
 
         if (metrics.DurationConstraintViolationCount >
             thresholds.MaximumDurationConstraintViolations)
         {
             failures.Add(
-                $"{fixtureId}: {metrics.DurationConstraintViolationCount} duration " +
+                $"{fixtureId}: {Count(metrics.DurationConstraintViolationCount)} duration " +
                 "constraint violation(s).");
         }
 
@@ -129,7 +173,7 @@ public sealed class ChapterEvaluationHarness
             thresholds.MaximumSourceSegmentIdMismatches)
         {
             failures.Add(
-                $"{fixtureId}: {metrics.SourceSegmentIdMismatchCount} source segment " +
+                $"{fixtureId}: {Count(metrics.SourceSegmentIdMismatchCount)} source segment " +
                 "ID mismatch(es).");
         }
 
@@ -137,12 +181,30 @@ public sealed class ChapterEvaluationHarness
             thresholds.MaximumTimestampSemanticViolations)
         {
             failures.Add(
-                $"{fixtureId}: {metrics.TimestampSemanticViolationCount} timestamp " +
+                $"{fixtureId}: {Count(metrics.TimestampSemanticViolationCount)} timestamp " +
                 "semantic violation(s).");
         }
 
         return failures.AsReadOnly();
     }
+
+    private static string Ratio(double value) =>
+        ChapterEvaluationFormatting.Ratio(value);
+
+    private static string Count(int value) =>
+        ChapterEvaluationFormatting.Count(value);
+}
+
+/// <summary>
+/// Culture-independent formatting so reports are byte-stable on any machine.
+/// </summary>
+internal static class ChapterEvaluationFormatting
+{
+    public static string Ratio(double value) =>
+        value.ToString("0.000", CultureInfo.InvariantCulture);
+
+    public static string Count(int value) =>
+        value.ToString(CultureInfo.InvariantCulture);
 }
 
 /// <summary>
@@ -154,11 +216,13 @@ public sealed class ChapterEvaluationCaseResult
         string fixtureId,
         string fixtureSchemaVersion,
         ChapterEvaluationMetrics metrics,
+        string providerSignalDigest,
         IReadOnlyList<string> failures)
     {
         FixtureId = fixtureId;
         FixtureSchemaVersion = fixtureSchemaVersion;
         Metrics = metrics;
+        ProviderSignalDigest = providerSignalDigest;
         Failures = failures;
     }
 
@@ -167,6 +231,13 @@ public sealed class ChapterEvaluationCaseResult
     public string FixtureSchemaVersion { get; }
 
     public ChapterEvaluationMetrics Metrics { get; }
+
+    /// <summary>
+    /// Stable digest of the embedding and scoring signals observed for this
+    /// fixture, so provider regressions remain visible even though chapter
+    /// boundaries are produced structurally.
+    /// </summary>
+    public string ProviderSignalDigest { get; }
 
     public IReadOnlyList<string> Failures { get; }
 
@@ -222,10 +293,11 @@ public sealed class ChapterEvaluationReport
         builder.AppendLine($"Chapter evaluation report v{SchemaVersion}");
         builder.AppendLine($"Status: {(Passed ? "PASS" : "FAIL")}");
         builder.AppendLine(
-            $"Boundary tolerance: {BoundaryTolerance.ToString("c", null)}");
+            $"Boundary tolerance: {BoundaryTolerance.ToString("c", CultureInfo.InvariantCulture)}");
         builder.AppendLine(
             "Fixture | Boundary P/R/F1 | Coverage | WindowDiff | " +
-            "Duration violations | Source ID mismatches | Timestamp violations");
+            "Duration violations | Source ID mismatches | Timestamp violations | " +
+            "Provider signal");
         foreach (var result in Cases)
         {
             var metrics = result.Metrics;
@@ -233,14 +305,15 @@ public sealed class ChapterEvaluationReport
                 string.Join(
                     " | ",
                     result.FixtureId,
-                    $"{metrics.BoundaryPrecision:0.000}/" +
-                    $"{metrics.BoundaryRecall:0.000}/" +
-                    $"{metrics.BoundaryF1:0.000}",
-                    $"{metrics.CoverageRatio:0.000}",
-                    $"{metrics.WindowDiff:0.000}",
-                    metrics.DurationConstraintViolationCount,
-                    metrics.SourceSegmentIdMismatchCount,
-                    metrics.TimestampSemanticViolationCount));
+                    $"{Ratio(metrics.BoundaryPrecision)}/" +
+                    $"{Ratio(metrics.BoundaryRecall)}/" +
+                    $"{Ratio(metrics.BoundaryF1)}",
+                    Ratio(metrics.CoverageRatio),
+                    Ratio(metrics.WindowDiff),
+                    Count(metrics.DurationConstraintViolationCount),
+                    Count(metrics.SourceSegmentIdMismatchCount),
+                    Count(metrics.TimestampSemanticViolationCount),
+                    result.ProviderSignalDigest));
         }
 
         if (!Passed)
@@ -254,6 +327,12 @@ public sealed class ChapterEvaluationReport
 
         return builder.ToString();
     }
+
+    private static string Ratio(double value) =>
+        ChapterEvaluationFormatting.Ratio(value);
+
+    private static string Count(int value) =>
+        ChapterEvaluationFormatting.Count(value);
 }
 
 /// <summary>

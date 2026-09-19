@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using AudioTranscriber.ChapterEvaluation;
+using AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.ChapterEvaluation.Tests;
 
@@ -72,6 +74,96 @@ public sealed class ChapterEvaluationTests
 
         Assert.Equal(first.ToJson(), second.ToJson());
         Assert.Equal(first.ToText(), second.ToText());
+    }
+
+    [Fact]
+    public async Task Harness_RejectsDuplicateFixtureIds()
+    {
+        var fixture = LoadFixture("product-launch.json");
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => new ChapterEvaluationHarness()
+                .EvaluateAsync(new[] { fixture, fixture }));
+
+        Assert.Contains(
+            "Fixture IDs must be unique",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Harness_ReportUsesInvariantNumberFormatting()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+            var report = await new ChapterEvaluationHarness()
+                .EvaluateAsync(
+                    new[] { LoadFixture("product-launch.json") },
+                    new ChapterEvaluationOptions
+                    {
+                        MaximumChapterDuration = TimeSpan.FromSeconds(60),
+                        Thresholds = new ChapterEvaluationThresholds
+                        {
+                            MinimumBoundaryF1 = 1d
+                        }
+                    });
+
+            var text = report.ToText();
+
+            Assert.DoesNotContain(",", text, StringComparison.Ordinal);
+            Assert.Contains("1.000", text, StringComparison.Ordinal);
+            Assert.All(
+                report.Failures,
+                failure => Assert.DoesNotContain(",", failure, StringComparison.Ordinal));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Fact]
+    public async Task Harness_ReportsProviderSignalsThatChangeWithProviders()
+    {
+        var fixtures = LoadFixtures();
+        var options = new ChapterEvaluationOptions
+        {
+            MaximumChapterDuration = TimeSpan.FromSeconds(10)
+        };
+
+        var baseline = await new ChapterEvaluationHarness()
+            .EvaluateAsync(fixtures, options);
+        var alternate = await new ChapterEvaluationHarness(
+                scoringProvider: new ConstantScoringProvider(0.25d))
+            .EvaluateAsync(fixtures, options);
+
+        Assert.All(
+            baseline.Cases,
+            result => Assert.Matches("^[0-9a-f]{16}$", result.ProviderSignalDigest));
+        Assert.Equal(
+            baseline.Cases.Select(result => result.Metrics.BoundaryF1),
+            alternate.Cases.Select(result => result.Metrics.BoundaryF1));
+        Assert.NotEqual(
+            baseline.Cases.Select(result => result.ProviderSignalDigest),
+            alternate.Cases.Select(result => result.ProviderSignalDigest));
+        Assert.Contains(
+            baseline.Cases[0].ProviderSignalDigest,
+            baseline.ToText(),
+            StringComparison.Ordinal);
+    }
+
+    private sealed class ConstantScoringProvider : ITranscriptChunkScoringProvider
+    {
+        private readonly double score;
+
+        public ConstantScoringProvider(double score) => this.score = score;
+
+        public ValueTask<double> ScoreAsync(
+            TranscriptChunkScoringRequest request,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(score);
     }
 
     [Fact]

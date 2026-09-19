@@ -325,9 +325,13 @@ consecutive original ordinals.
 Coverage is the fraction of source-segment duration represented by generated
 chapters (timing gaps are not content); the report also includes duration
 constraint violations, source-ID and timestamp-semantic violations, and
-WindowDiff over source-segment windows. Reports have stable text and JSON forms
-and deterministic thresholds suitable for a later CI/release gate. Run the
-focused suite with:
+WindowDiff over source-segment windows. Chapter boundaries themselves are
+produced structurally, so each case also reports a provider signal digest over
+the embedding and scoring outputs; substituting a provider changes that digest
+even when the boundaries are unchanged. Fixture IDs must be unique within a run,
+and all report numbers are formatted with the invariant culture. Reports have
+stable text and JSON forms and deterministic thresholds suitable for a later
+CI/release gate. Run the focused suite with:
 
 ```powershell
 dotnet test .\tests\AudioTranscriber.ChapterEvaluation.Tests\AudioTranscriber.ChapterEvaluation.Tests.csproj --no-restore -v:minimal
