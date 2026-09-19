@@ -9,14 +9,15 @@ public sealed class SmartToolServicesTests
     public void Capability_registry_exposes_all_current_commands_with_classification()
     {
         Assert.Equal(
-            ["manifest", "doctor", "convert", "transcribe"],
+            ["manifest", "doctor", "convert", "transcribe", "chapters"],
             SmartToolCapabilityRegistry.All.Select(capability => capability.Name));
         Assert.Equal(
             [
                 SmartToolCapabilityKind.Deterministic,
                 SmartToolCapabilityKind.Deterministic,
                 SmartToolCapabilityKind.Deterministic,
-                SmartToolCapabilityKind.ModelBacked
+                SmartToolCapabilityKind.ModelBacked,
+                SmartToolCapabilityKind.Deterministic
             ],
             SmartToolCapabilityRegistry.All.Select(capability => capability.Kind));
     }
@@ -59,6 +60,7 @@ public sealed class SmartToolServicesTests
     [InlineData("doctor")]
     [InlineData("convert")]
     [InlineData("transcribe")]
+    [InlineData("chapters")]
     public void Capability_registry_skills_document_invocation_contract(string capabilityName)
     {
         var skill = SmartToolHelpRenderer.RenderCapabilityHelp(capabilityName);
@@ -180,9 +182,18 @@ public sealed class SmartToolServicesTests
         var runtimeDependency = Assert.Single(library.Descendants("PackageReference"),
             item => (string?)item.Attribute("Include") == "Whisper.net.Runtime");
         Assert.Equal("none", (string?)runtimeDependency.Attribute("PrivateAssets"));
-        Assert.Equal(
-            @"..\AudioTranscriber\AudioTranscriber.csproj",
-            (string?)Assert.Single(cli.Descendants("ProjectReference")).Attribute("Include"));
+        Assert.Contains(
+            cli.Descendants("ProjectReference"),
+            item => (string?)item.Attribute("Include") ==
+                    @"..\AudioTranscriber\AudioTranscriber.csproj");
+        Assert.Contains(
+            cli.Descendants("ProjectReference"),
+            item => (string?)item.Attribute("Include") ==
+                    @"..\AudioTranscriber.TranscriptProcessing\AudioTranscriber.TranscriptProcessing.csproj");
+        Assert.Contains(
+            cli.Descendants("ProjectReference"),
+            item => (string?)item.Attribute("Include") ==
+                    @"..\AudioTranscriber.Granite\AudioTranscriber.Granite.csproj");
         Assert.DoesNotContain(cli.Descendants("PackageReference"), item =>
             (string?)item.Attribute("Include") == "AudioTranscriber");
     }
@@ -282,12 +293,14 @@ public sealed class SmartToolServicesTests
                     "version: 0.1.1",
                     "description: >",
                     "  Prepare local audio for Whisper transcription and run timestamped local",
-                    "  speech recognition with explicit deterministic conversion and diagnostics.",
+                    "  speech recognition, or produce source-linked chapters from an existing",
+                    "  timestamped transcript with explicit deterministic conversion and diagnostics.",
                     "use_cases:",
                     "  - Prepare local audio for speech recognition",
                     "  - Check whether a WAV file meets the transcription input contract",
                     "  - Produce timestamped transcripts from local speech recordings",
                     "  - Render transcripts for people or downstream programs",
+                    "  - Produce source-linked timestamped chapters from transcript JSON",
                     "  - Check local model, cache, FFmpeg, and package readiness",
                     "platforms:",
                     "  - windows",
@@ -299,7 +312,11 @@ public sealed class SmartToolServicesTests
                     "  - name: network access",
                     "    purpose: Needed by the model-backed transcribe capability when the verified Whisper Base artifact is not already cached.",
                     "    optional: true",
-                    "    install: https://huggingface.co/sandrohanea/whisper.net"
+                    "    install: https://huggingface.co/sandrohanea/whisper.net",
+                    "  - name: Granite model assets",
+                    "    purpose: Needed only when chapters explicitly selects the optional granite provider; the pinned assets must be provisioned in an external cache.",
+                    "    optional: true",
+                    "    install: https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual"
                 ]),
             string.Join('\n', lines[..closingMarker]));
     }
@@ -313,7 +330,7 @@ public sealed class SmartToolServicesTests
         Assert.Equal("audio-transcriber", manifest.Name);
         Assert.Equal("0.1.1", manifest.Version);
         Assert.Equal(
-            "Prepare local audio for Whisper transcription and run timestamped local speech recognition with explicit deterministic conversion and diagnostics.",
+            "Prepare local audio for Whisper transcription and run timestamped local speech recognition, or produce source-linked chapters from an existing timestamped transcript with explicit deterministic conversion and diagnostics.",
             manifest.Description);
         Assert.Equal(
             [
@@ -321,6 +338,7 @@ public sealed class SmartToolServicesTests
                 "Check whether a WAV file meets the transcription input contract",
                 "Produce timestamped transcripts from local speech recordings",
                 "Render transcripts for people or downstream programs",
+                "Produce source-linked timestamped chapters from transcript JSON",
                 "Check local model, cache, FFmpeg, and package readiness"
             ],
             manifest.UseCases);
@@ -336,6 +354,11 @@ public sealed class SmartToolServicesTests
                     "network access",
                     "Needed by the model-backed transcribe capability when the verified Whisper Base artifact is not already cached.",
                     "https://huggingface.co/sandrohanea/whisper.net",
+                    true),
+                new SmartToolRequirement(
+                    "Granite model assets",
+                    "Needed only when chapters explicitly selects the optional granite provider; the pinned assets must be provisioned in an external cache.",
+                    "https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual",
                     true)
             ],
             manifest.Requires);

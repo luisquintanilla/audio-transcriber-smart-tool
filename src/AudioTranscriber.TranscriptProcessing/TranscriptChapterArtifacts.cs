@@ -24,7 +24,8 @@ public sealed class TranscriptChapterArtifact
         string id,
         string title,
         TranscriptChunkWindow window,
-        IReadOnlyList<TranscriptChapterSourceMetadata> sourceMetadata)
+        IReadOnlyList<TranscriptChapterSourceMetadata> sourceMetadata,
+        TranscriptChapterBoundaryMetadata boundary)
     {
         Id = id;
         SchemaVersion = TranscriptChapterArtifactSchema.CurrentVersion;
@@ -38,6 +39,7 @@ public sealed class TranscriptChapterArtifact
         SourceSegments = window.SourceSegments;
         SourceMetadata = sourceMetadata;
         Score = window.Score ?? 0d;
+        Boundary = boundary;
     }
 
     public string SchemaVersion { get; }
@@ -63,6 +65,84 @@ public sealed class TranscriptChapterArtifact
     public IReadOnlyList<TranscriptChapterSourceMetadata> SourceMetadata { get; }
 
     public double Score { get; }
+
+    public TranscriptChapterBoundaryMetadata Boundary { get; }
+
+    public TranscriptChapterBoundaryMetadata BoundaryMetadata => Boundary;
+}
+
+/// <summary>
+/// Describes how a chapter boundary maps to source transcript segments.
+/// </summary>
+public sealed record TranscriptChapterBoundaryMetadata
+{
+    public TranscriptChapterBoundaryMetadata(
+        string startSegmentId,
+        string endSegmentId,
+        int startOriginalOrdinal,
+        int endOriginalOrdinal,
+        TimeSpan? gapBefore = null,
+        TimeSpan? gapAfter = null)
+    {
+        if (string.IsNullOrWhiteSpace(startSegmentId))
+        {
+            throw new ArgumentException(
+                "The chapter start segment ID cannot be empty.",
+                nameof(startSegmentId));
+        }
+
+        if (string.IsNullOrWhiteSpace(endSegmentId))
+        {
+            throw new ArgumentException(
+                "The chapter end segment ID cannot be empty.",
+                nameof(endSegmentId));
+        }
+
+        if (startOriginalOrdinal < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(startOriginalOrdinal));
+        }
+
+        if (endOriginalOrdinal < startOriginalOrdinal)
+        {
+            throw new ArgumentOutOfRangeException(nameof(endOriginalOrdinal));
+        }
+
+        if (gapBefore is not null && gapBefore.Value < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(gapBefore));
+        }
+
+        if (gapAfter is not null && gapAfter.Value < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(gapAfter));
+        }
+
+        StartSegmentId = startSegmentId;
+        EndSegmentId = endSegmentId;
+        StartOriginalOrdinal = startOriginalOrdinal;
+        EndOriginalOrdinal = endOriginalOrdinal;
+        StartSnappedToSegmentBoundary = true;
+        EndSnappedToSegmentBoundary = true;
+        GapBefore = gapBefore;
+        GapAfter = gapAfter;
+    }
+
+    public string StartSegmentId { get; }
+
+    public string EndSegmentId { get; }
+
+    public int StartOriginalOrdinal { get; }
+
+    public int EndOriginalOrdinal { get; }
+
+    public bool StartSnappedToSegmentBoundary { get; }
+
+    public bool EndSnappedToSegmentBoundary { get; }
+
+    public TimeSpan? GapBefore { get; }
+
+    public TimeSpan? GapAfter { get; }
 }
 
 /// <summary>
@@ -74,11 +154,13 @@ public sealed class TranscriptChapterArtifactDocument
     internal TranscriptChapterArtifactDocument(
         string source,
         TranscriptProvenance provenance,
-        IEnumerable<TranscriptChapterArtifact> chapters)
+        IEnumerable<TranscriptChapterArtifact> chapters,
+        TranscriptChapterGenerationMetadata generation)
     {
         Source = source;
         Provenance = provenance;
         Chapters = Array.AsReadOnly(chapters.ToArray());
+        Generation = generation;
     }
 
     public string SchemaVersion => TranscriptChapterArtifactSchema.CurrentVersion;
@@ -86,6 +168,15 @@ public sealed class TranscriptChapterArtifactDocument
     public string Source { get; }
 
     public TranscriptProvenance Provenance { get; }
+
+    public TranscriptChapterGenerationMetadata Generation { get; }
+
+    public string Algorithm => Generation.Algorithm;
+
+    public string Provider => Generation.Provider;
+
+    public IReadOnlyDictionary<string, string> ProviderConfiguration =>
+        Generation.Configuration;
 
     public IReadOnlyList<TranscriptChapterArtifact> Chapters { get; }
 
@@ -105,9 +196,14 @@ public sealed class TranscriptChapterArtifactDocument
 /// </summary>
 public sealed class TranscriptChapterArtifactGenerator
 {
-    public TranscriptChapterArtifactDocument Generate(TranscriptChunkResult result)
+    public TranscriptChapterArtifactDocument Generate(
+        TranscriptChunkResult result,
+        TranscriptChapterGenerationMetadata? generation = null)
     {
         ArgumentNullException.ThrowIfNull(result);
+        generation ??= new TranscriptChapterGenerationMetadata(
+            "segment-boundary-v1",
+            "deterministic");
 
         var chapters = result.Windows
             .Where(window => !window.IsGap)
@@ -117,13 +213,15 @@ public sealed class TranscriptChapterArtifactGenerator
                         CreateId(window, index),
                         $"Chapter {index + 1}",
                         window,
-                        MergeMetadata(window.SourceSegments)))
+                        MergeMetadata(window.SourceSegments),
+                        CreateBoundary(result.Windows, window)))
             .ToArray();
 
         return new TranscriptChapterArtifactDocument(
             result.Source,
             result.Provenance,
-            chapters);
+            chapters,
+            generation);
     }
 
     public Task<TranscriptChapterArtifactDocument> GenerateAsync(
@@ -160,6 +258,12 @@ public sealed class TranscriptChapterArtifactGenerator
             WriteOptionalString(writer, "cachePath", document.Provenance.CachePath);
             WriteMetadata(writer, "metadata", document.Provenance.Metadata);
             writer.WriteEndObject();
+            writer.WritePropertyName("generation");
+            writer.WriteStartObject();
+            writer.WriteString("algorithm", document.Generation.Algorithm);
+            writer.WriteString("provider", document.Generation.Provider);
+            WriteMetadata(writer, "configuration", document.Generation.Configuration);
+            writer.WriteEndObject();
             writer.WritePropertyName("chapters");
             writer.WriteStartArray();
 
@@ -173,6 +277,35 @@ public sealed class TranscriptChapterArtifactGenerator
                 writer.WriteString("end", TranscriptJsonWriter.FormatTimestamp(chapter.End));
                 writer.WriteString("text", chapter.Text);
                 writer.WriteNumber("score", chapter.Score);
+                writer.WritePropertyName("boundary");
+                writer.WriteStartObject();
+                writer.WriteString(
+                    "startSegmentId",
+                    chapter.Boundary.StartSegmentId);
+                writer.WriteString(
+                    "endSegmentId",
+                    chapter.Boundary.EndSegmentId);
+                writer.WriteNumber(
+                    "startOriginalOrdinal",
+                    chapter.Boundary.StartOriginalOrdinal);
+                writer.WriteNumber(
+                    "endOriginalOrdinal",
+                    chapter.Boundary.EndOriginalOrdinal);
+                writer.WriteBoolean(
+                    "startSnappedToSegmentBoundary",
+                    chapter.Boundary.StartSnappedToSegmentBoundary);
+                writer.WriteBoolean(
+                    "endSnappedToSegmentBoundary",
+                    chapter.Boundary.EndSnappedToSegmentBoundary);
+                WriteOptionalTimestamp(
+                    writer,
+                    "gapBefore",
+                    chapter.Boundary.GapBefore);
+                WriteOptionalTimestamp(
+                    writer,
+                    "gapAfter",
+                    chapter.Boundary.GapAfter);
+                writer.WriteEndObject();
 
                 writer.WritePropertyName("sourceSegmentIds");
                 writer.WriteStartArray();
@@ -225,6 +358,40 @@ public sealed class TranscriptChapterArtifactGenerator
         return Array.AsReadOnly(values.ToArray());
     }
 
+    private static TranscriptChapterBoundaryMetadata CreateBoundary(
+        IReadOnlyList<TranscriptChunkWindow> windows,
+        TranscriptChunkWindow window)
+    {
+        var firstSegment = window.SourceSegments[0];
+        var lastSegment = window.SourceSegments[^1];
+        var index = 0;
+        while (index < windows.Count && !ReferenceEquals(windows[index], window))
+        {
+            index++;
+        }
+
+        if (index == windows.Count)
+        {
+            throw new InvalidOperationException(
+                "The chapter window was not found in its chunk result.");
+        }
+
+        var gapBefore = index > 0 && windows[index - 1].IsGap
+            ? (TimeSpan?)(windows[index - 1].End - windows[index - 1].Start)
+            : null;
+        var gapAfter = index + 1 < windows.Count && windows[index + 1].IsGap
+            ? (TimeSpan?)(windows[index + 1].End - windows[index + 1].Start)
+            : null;
+
+        return new TranscriptChapterBoundaryMetadata(
+            firstSegment.Id,
+            lastSegment.Id,
+            firstSegment.OriginalOrdinal,
+            lastSegment.OriginalOrdinal,
+            gapBefore,
+            gapAfter);
+    }
+
     private static void WriteMetadata(
         Utf8JsonWriter writer,
         string name,
@@ -269,6 +436,17 @@ public sealed class TranscriptChapterArtifactGenerator
         if (value is not null)
         {
             writer.WriteString(name, value);
+        }
+    }
+
+    private static void WriteOptionalTimestamp(
+        Utf8JsonWriter writer,
+        string name,
+        TimeSpan? value)
+    {
+        if (value is not null)
+        {
+            writer.WriteString(name, TranscriptJsonWriter.FormatTimestamp(value.Value));
         }
     }
 }
