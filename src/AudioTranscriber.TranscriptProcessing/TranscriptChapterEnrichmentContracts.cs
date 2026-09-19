@@ -153,10 +153,11 @@ public sealed record TranscriptChapterEnrichmentGenerationMetadata
                         nameof(configuration));
                 }
 
-                if (!values.TryAdd(entry.Key.Trim(), entry.Value))
+                var normalizedKey = entry.Key.Trim();
+                if (!values.TryAdd(normalizedKey, entry.Value))
                 {
                     throw new ArgumentException(
-                        $"Duplicate enrichment configuration key '{entry.Key}'.",
+                        $"Duplicate enrichment configuration key '{normalizedKey}'.",
                         nameof(configuration));
                 }
             }
