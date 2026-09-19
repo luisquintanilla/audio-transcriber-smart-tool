@@ -327,8 +327,34 @@ public sealed class CliApplication
     }
 
     private static string ResolveLinkTargetPath(FileInfo file) =>
-        file.ResolveLinkTarget(returnFinalTarget: true)?.FullName ??
-        file.FullName;
+        ResolveFinalLinkTargetPath(
+            new FileInfo(
+                Path.Combine(
+                    ResolveDirectoryPath(file.Directory!),
+                    file.Name)));
+
+    private static string ResolveFinalLinkTargetPath(FileInfo file)
+    {
+        var target = file.ResolveLinkTarget(returnFinalTarget: true);
+        return target is null
+            ? file.FullName
+            : ResolveLinkTargetPath(new FileInfo(target.FullName));
+    }
+
+    private static string ResolveDirectoryPath(DirectoryInfo directory)
+    {
+        if (directory.Parent is null)
+        {
+            return directory.FullName;
+        }
+
+        var resolvedDirectory = new DirectoryInfo(
+            Path.Combine(ResolveDirectoryPath(directory.Parent), directory.Name));
+        var target = resolvedDirectory.ResolveLinkTarget(returnFinalTarget: true);
+        return target is null
+            ? resolvedDirectory.FullName
+            : ResolveDirectoryPath((DirectoryInfo)target);
+    }
 
     private static bool TryParseTranscribeOptions(
         string[] args,
