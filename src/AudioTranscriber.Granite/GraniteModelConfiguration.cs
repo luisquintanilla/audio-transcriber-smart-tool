@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.Granite;
 
@@ -70,17 +69,17 @@ public sealed class GraniteModelConfiguration
             GraniteModelMetadata.TokenizerSha256,
             GraniteModelMetadata.AssetUri(GraniteModelMetadata.TokenizerFileName));
 
-    public TranscriptProvenance Provenance =>
+    internal GraniteModelProvenance Provenance =>
         new(
-            provider: "IBM Granite/ONNX Runtime",
-            model: ModelId,
-            packageId:
+            Provider: "IBM Granite/ONNX Runtime",
+            Model: ModelId,
+            PackageId:
                 $"AudioTranscriber.Granite;Microsoft.ML.OnnxRuntime;Microsoft.ML.Tokenizers",
-            packageVersion:
+            PackageVersion:
                 $"{GraniteModelMetadata.PackageVersion};" +
                 $"{GraniteModelMetadata.OnnxRuntimePackageVersion};" +
                 GraniteModelMetadata.TokenizersPackageVersion,
-            source:
+            Source:
                 $"repository={GraniteModelMetadata.RepositoryUrl};" +
                 $"revision={Revision};" +
                 $"modelAsset={ModelAsset.FileName};" +
@@ -89,14 +88,14 @@ public sealed class GraniteModelConfiguration
                 $"tokenizerSha256={TokenizerAsset.Sha256};" +
                 $"pooling={GraniteModelMetadata.Pooling};" +
                 $"normalization={GraniteModelMetadata.Normalization}",
-            cachePath: CacheDirectory,
-            metadata:
-            [
-                new("embeddingDimensions", EmbeddingDimensions.ToString()),
-                new("maxTokens", MaxTokens.ToString()),
-                new("allowNetworkDownload", AllowNetworkDownload.ToString()),
-                new("requireAvx2", RequireAvx2.ToString()),
-            ]);
+            CachePath: CacheDirectory,
+            Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["embeddingDimensions"] = EmbeddingDimensions.ToString(),
+                ["maxTokens"] = MaxTokens.ToString(),
+                ["allowNetworkDownload"] = AllowNetworkDownload.ToString(),
+                ["requireAvx2"] = RequireAvx2.ToString(),
+            });
 
     internal void ValidateCapabilities(GraniteRuntimeCapabilities capabilities)
     {
@@ -109,6 +108,15 @@ public sealed class GraniteModelConfiguration
                 "Granite embedding requires AVX2, but the current process does not support AVX2.");
         }
     }
+
+    internal sealed record GraniteModelProvenance(
+        string Provider,
+        string Model,
+        string PackageId,
+        string PackageVersion,
+        string Source,
+        string CachePath,
+        IReadOnlyDictionary<string, string> Metadata);
 }
 
 public enum GraniteAssetKind

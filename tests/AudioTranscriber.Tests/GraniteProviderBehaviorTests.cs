@@ -95,6 +95,9 @@ public sealed class GraniteProviderBehaviorTests
 
         Assert.Same(provider, provider.GetService(
             typeof(IEmbeddingGenerator<TextContent, Embedding<float>>)));
+        Assert.Null(provider.GetService(
+            typeof(IEmbeddingGenerator<TextContent, Embedding<float>>),
+            "named"));
         Assert.Null(provider.GetService(typeof(string)));
     }
 

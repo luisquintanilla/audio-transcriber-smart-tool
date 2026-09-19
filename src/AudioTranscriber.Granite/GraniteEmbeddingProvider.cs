@@ -1,5 +1,4 @@
 using Microsoft.Extensions.AI;
-using AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.Granite;
 
@@ -28,12 +27,12 @@ public sealed class GraniteEmbeddingProvider :
         Provenance = configuration.Provenance;
     }
 
-    public TranscriptProvenance Provenance { get; }
+    internal GraniteModelConfiguration.GraniteModelProvenance Provenance { get; }
 
     public object? GetService(Type serviceType, object? serviceKey = null)
     {
         ArgumentNullException.ThrowIfNull(serviceType);
-        return serviceType.IsInstanceOfType(this) ? this : null;
+        return serviceKey is null && serviceType.IsInstanceOfType(this) ? this : null;
     }
 
     public static async Task<GraniteEmbeddingProvider> CreateAsync(
