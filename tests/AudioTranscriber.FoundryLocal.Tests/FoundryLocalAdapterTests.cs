@@ -28,12 +28,12 @@ public sealed class FoundryLocalAdapterTests
         var chapter = artifact[0];
         var chapterPrompt = FoundryLocalPromptBuilder.BuildChapterPrompt(chapter);
 
-        Assert.Equal("system", chapterPrompt[0].Role);
-        Assert.Equal("user", chapterPrompt[1].Role);
-        Assert.Contains(chapter.Id, chapterPrompt[1].Content);
-        Assert.Contains("segment-first", chapterPrompt[1].Content);
-        Assert.Contains("source-first", chapterPrompt[1].Content);
-        Assert.Contains("00:00:01", chapterPrompt[1].Content);
+        Assert.Equal(ChatRole.System, chapterPrompt[0].Role);
+        Assert.Equal(ChatRole.User, chapterPrompt[1].Role);
+        Assert.Contains(chapter.Id, chapterPrompt[1].Text);
+        Assert.Contains("segment-first", chapterPrompt[1].Text);
+        Assert.Contains("source-first", chapterPrompt[1].Text);
+        Assert.Contains("00:00:01", chapterPrompt[1].Text);
 
         var overallRequest = new TranscriptOverallSummaryRequest(
             [
@@ -49,10 +49,10 @@ public sealed class FoundryLocalAdapterTests
             isPartial: false);
         var overallPrompt = FoundryLocalPromptBuilder.BuildOverallPrompt(overallRequest);
 
-        Assert.Contains("chapter-one", overallPrompt[1].Content);
-        Assert.Contains("first summary", overallPrompt[1].Content);
-        Assert.DoesNotContain("first source", overallPrompt[1].Content);
-        Assert.DoesNotContain("second source", overallPrompt[1].Content);
+        Assert.Contains("chapter-one", overallPrompt[1].Text);
+        Assert.Contains("first summary", overallPrompt[1].Text);
+        Assert.DoesNotContain("first source", overallPrompt[1].Text);
+        Assert.DoesNotContain("second source", overallPrompt[1].Text);
     }
 
     [Fact]
@@ -115,10 +115,11 @@ public sealed class FoundryLocalAdapterTests
         var artifact = CreateArtifact(
             Segment("source", 0, 1, 0, "segment-source"));
         var chat = new FakeChatClient(
-            (request, _) =>
+            (_, _, _) =>
             {
                 var chapter = Assert.Single(artifact);
-                return Task.FromResult(ChapterResponse(chapter, "summary"));
+                return Task.FromResult(
+                    ChatResponseFor(ChapterResponse(chapter, "summary")));
             });
         var runtime = new FakeRuntime(chat);
         var provider = new FoundryLocalEnrichmentProvider(
@@ -138,11 +139,11 @@ public sealed class FoundryLocalAdapterTests
 
         Assert.Equal("summary", summary!.Summary);
         Assert.Equal(1, runtime.PrepareCount);
-        var request = Assert.Single(chat.Requests);
-        Assert.Equal("model-id", request.ModelId);
-        Assert.Equal(321, request.MaxOutputTokens);
-        Assert.Equal(0.25, request.Temperature);
-        Assert.Equal(TimeSpan.FromSeconds(9), chat.Timeouts.Single());
+        var chatOptions = Assert.Single(chat.Options);
+        Assert.NotNull(chatOptions);
+        Assert.Equal("model-id", chatOptions.ModelId);
+        Assert.Equal(321, chatOptions.MaxOutputTokens);
+        Assert.Equal(0.25f, chatOptions.Temperature);
         Assert.Equal("foundry-local", options.Provider);
         Assert.Equal("chosen-model", options.Model);
         Assert.Equal(
@@ -163,33 +164,35 @@ public sealed class FoundryLocalAdapterTests
             Segment("second", 1, 2, 1, "segment-second"),
             Segment("third", 2, 3, 2, "segment-third"));
         var chat = new FakeChatClient(
-            (request, _) =>
+            (request, _, _) =>
             {
-                if (request.Messages[1].Content.Contains(
+                if (request[1].Text.Contains(
                         $"chapterId: {artifact[1].Id}",
                         StringComparison.Ordinal))
                 {
                     throw new InvalidOperationException("simulated provider failure");
                 }
 
-                if (request.Messages[1].Content.Contains(
+                if (request[1].Text.Contains(
                         "chapterSummaries:",
                         StringComparison.Ordinal))
                 {
                     return Task.FromResult(
-                        OverallResponse(
-                            [artifact[0].Id, artifact[2].Id],
-                            "partial overall"));
+                        ChatResponseFor(
+                            OverallResponse(
+                                [artifact[0].Id, artifact[2].Id],
+                                "partial overall")));
                 }
 
                 var chapter = artifact.Single(
-                    candidate => request.Messages[1].Content.Contains(
+                    candidate => request[1].Text.Contains(
                         $"chapterId: {candidate.Id}",
                         StringComparison.Ordinal));
                 return Task.FromResult(
-                    ChapterResponse(
-                        chapter,
-                        $"summary-{chapter.Id}"));
+                    ChatResponseFor(
+                        ChapterResponse(
+                            chapter,
+                            $"summary-{chapter.Id}")));
             });
         var provider = new FoundryLocalEnrichmentProvider(
             new FoundryLocalEnrichmentOptions("chosen-model"),
@@ -227,9 +230,9 @@ public sealed class FoundryLocalAdapterTests
             Segment("first", 0, 1, 0, "segment-first"),
             Segment("second", 1, 2, 1, "segment-second"));
         var chat = new FakeChatClient(
-            (request, _) =>
+            (request, _, _) =>
             {
-                if (request.Messages[1].Content.Contains(
+                if (request[1].Text.Contains(
                         $"chapterId: {artifact[1].Id}",
                         StringComparison.Ordinal))
                 {
@@ -237,10 +240,11 @@ public sealed class FoundryLocalAdapterTests
                 }
 
                 var chapter = artifact.Single(
-                    candidate => request.Messages[1].Content.Contains(
+                    candidate => request[1].Text.Contains(
                         $"chapterId: {candidate.Id}",
                         StringComparison.Ordinal));
-                return Task.FromResult(ChapterResponse(chapter, "first summary"));
+                return Task.FromResult(
+                    ChatResponseFor(ChapterResponse(chapter, "first summary")));
             });
         var provider = new FoundryLocalEnrichmentProvider(
             new FoundryLocalEnrichmentOptions("chosen-model"),
@@ -265,11 +269,11 @@ public sealed class FoundryLocalAdapterTests
         var started = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var chat = new FakeChatClient(
-            async (_, cancellationToken) =>
+            async (_, _, cancellationToken) =>
             {
                 started.SetResult();
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-                return string.Empty;
+                return ChatResponseFor(string.Empty);
             });
         var provider = new FoundryLocalEnrichmentProvider(
             new FoundryLocalEnrichmentOptions("chosen-model"),
@@ -296,10 +300,10 @@ public sealed class FoundryLocalAdapterTests
             Segment("blocking", 0, 1, 0, "segment-blocking"));
         var started = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource<string>(
+        var release = new TaskCompletionSource<ChatResponse>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var chat = new FakeChatClient(
-            (_, _) =>
+            (_, _, _) =>
             {
                 started.SetResult();
                 return release.Task;
@@ -320,7 +324,10 @@ public sealed class FoundryLocalAdapterTests
         Assert.NotSame(disposal, completed);
 
         release.SetResult(
-            ChapterResponse(Assert.Single(artifact), "completed after disposal request"));
+            ChatResponseFor(
+                ChapterResponse(
+                    Assert.Single(artifact),
+                    "completed after disposal request")));
         await enrichment;
         await disposal;
         await provider.DisposeAsync();
@@ -503,6 +510,9 @@ public sealed class FoundryLocalAdapterTests
             });
     }
 
+    private static ChatResponse ChatResponseFor(string text) =>
+        new(new ChatMessage(ChatRole.Assistant, text));
+
     private static TranscriptChapterArtifactDocument CreateArtifact(
         params TranscriptSegment[] segments)
     {
@@ -661,9 +671,9 @@ public sealed class FoundryLocalAdapterTests
 
     private sealed class FakeRuntime : IFoundryLocalRuntime
     {
-        private readonly IFoundryLocalChatClient chatClient;
+        private readonly IChatClient chatClient;
 
-        public FakeRuntime(IFoundryLocalChatClient chatClient)
+        public FakeRuntime(IChatClient chatClient)
         {
             this.chatClient = chatClient;
         }
@@ -707,28 +717,61 @@ public sealed class FoundryLocalAdapterTests
         }
     }
 
-    private sealed class FakeChatClient : IFoundryLocalChatClient
+    private sealed class FakeChatClient : IChatClient
     {
-        private readonly Func<FoundryLocalChatRequest, CancellationToken, Task<string>> handler;
+        private readonly Func<
+            IReadOnlyList<ChatMessage>,
+            ChatOptions?,
+            CancellationToken,
+            Task<ChatResponse>> handler;
 
         public FakeChatClient(
-            Func<FoundryLocalChatRequest, CancellationToken, Task<string>> handler)
+            Func<
+                IReadOnlyList<ChatMessage>,
+                ChatOptions?,
+                CancellationToken,
+                Task<ChatResponse>> handler)
         {
             this.handler = handler;
         }
 
-        public List<FoundryLocalChatRequest> Requests { get; } = [];
+        public List<IReadOnlyList<ChatMessage>> Requests { get; } = [];
 
-        public List<TimeSpan> Timeouts { get; } = [];
+        public List<ChatOptions?> Options { get; } = [];
 
-        public Task<string> CompleteAsync(
-            FoundryLocalChatRequest request,
-            TimeSpan timeout,
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
             CancellationToken cancellationToken = default)
         {
-            Requests.Add(request);
-            Timeouts.Add(timeout);
-            return handler(request, cancellationToken);
+            var snapshot = messages.ToArray();
+            Requests.Add(snapshot);
+            Options.Add(options);
+            return handler(snapshot, options, cancellationToken);
+        }
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
+            CancellationToken cancellationToken = default)
+        {
+            var response = await GetResponseAsync(
+                    messages,
+                    options,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var update in response.ToChatResponseUpdates())
+            {
+                yield return update;
+            }
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) =>
+            serviceType.IsInstanceOfType(this) ? this : null;
+
+        public void Dispose()
+        {
         }
     }
 }

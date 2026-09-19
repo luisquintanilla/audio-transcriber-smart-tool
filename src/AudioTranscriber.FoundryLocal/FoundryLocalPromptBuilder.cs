@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using AudioTranscriber.TranscriptProcessing;
+using Microsoft.Extensions.AI;
 
 namespace AudioTranscriber.FoundryLocal;
 
@@ -13,7 +14,7 @@ public static class FoundryLocalPromptBuilder
         "markdown fences or commentary. Copy evidence IDs, source IDs, and " +
         "timestamps exactly from the input. Never invent evidence.";
 
-    public static IReadOnlyList<FoundryLocalChatMessage> BuildChapterPrompt(
+    public static IReadOnlyList<ChatMessage> BuildChapterPrompt(
         TranscriptChapterArtifact chapter)
     {
         ArgumentNullException.ThrowIfNull(chapter);
@@ -42,12 +43,12 @@ public static class FoundryLocalPromptBuilder
 
         return
         [
-            new FoundryLocalChatMessage("system", SystemPrompt),
-            new FoundryLocalChatMessage("user", prompt.ToString().TrimEnd())
+            new ChatMessage(ChatRole.System, SystemPrompt),
+            new ChatMessage(ChatRole.User, prompt.ToString().TrimEnd())
         ];
     }
 
-    public static IReadOnlyList<FoundryLocalChatMessage> BuildOverallPrompt(
+    public static IReadOnlyList<ChatMessage> BuildOverallPrompt(
         TranscriptOverallSummaryRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -74,8 +75,8 @@ public static class FoundryLocalPromptBuilder
 
         return
         [
-            new FoundryLocalChatMessage("system", SystemPrompt),
-            new FoundryLocalChatMessage("user", prompt.ToString().TrimEnd())
+            new ChatMessage(ChatRole.System, SystemPrompt),
+            new ChatMessage(ChatRole.User, prompt.ToString().TrimEnd())
         ];
     }
 

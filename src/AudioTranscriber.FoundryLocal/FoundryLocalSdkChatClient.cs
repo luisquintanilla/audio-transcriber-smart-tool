@@ -1,11 +1,13 @@
+using System.Runtime.CompilerServices;
 using Microsoft.AI.Foundry.Local;
+using Microsoft.Extensions.AI;
 
 namespace AudioTranscriber.FoundryLocal;
 
 /// <summary>
 /// Uses Foundry Local's current in-process ChatSession API.
 /// </summary>
-public sealed class FoundryLocalSdkChatClient : IFoundryLocalChatClient
+public sealed class FoundryLocalSdkChatClient : IChatClient
 {
     private readonly IModel model;
 
@@ -14,78 +16,123 @@ public sealed class FoundryLocalSdkChatClient : IFoundryLocalChatClient
         this.model = model ?? throw new ArgumentNullException(nameof(model));
     }
 
-    public async Task<string> CompleteAsync(
-        FoundryLocalChatRequest request,
-        TimeSpan timeout,
+    public async Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        if (timeout <= TimeSpan.Zero)
+        ArgumentNullException.ThrowIfNull(messages);
+        if (options?.ModelId is { } requestedModelId &&
+            !string.Equals(
+                requestedModelId,
+                model.Id,
+                StringComparison.OrdinalIgnoreCase))
         {
-            throw new ArgumentOutOfRangeException(nameof(timeout));
+            throw new InvalidOperationException(
+                $"Foundry Local chat client is bound to model '{model.Id}', " +
+                $"not '{requestedModelId}'.");
         }
 
-        using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken);
-        timeoutCancellation.CancelAfter(timeout);
-
         using var session = new ChatSession(model);
-        session.SetOptions(
-            new RequestOptions
-            {
-                AdditionalOptions = new Dictionary<string, string>(
-                    StringComparer.Ordinal)
-                {
-                    ["temperature"] = request.Temperature.ToString(
-                        "R",
-                        System.Globalization.CultureInfo.InvariantCulture),
-                    ["max_tokens"] = request.MaxOutputTokens.ToString(
-                        System.Globalization.CultureInfo.InvariantCulture)
-                }
-            });
-        using var nativeRequest = new Request();
-        foreach (var message in request.Messages)
+        if (options is not null)
         {
-            var item = message.Role switch
-            {
-                "system" => MessageItem.System(message.Content),
-                "user" => MessageItem.User(message.Content),
-                "assistant" => MessageItem.Assistant(message.Content),
-                _ => throw new ArgumentException(
-                    $"Unsupported chat role '{message.Role}'.",
-                    nameof(request))
-            };
+            session.SetOptions(
+                new RequestOptions
+                {
+                    AdditionalOptions = new Dictionary<string, string>(
+                        StringComparer.Ordinal)
+                    {
+                        ["temperature"] = (options.Temperature ?? 0)
+                            .ToString(
+                                "R",
+                                System.Globalization.CultureInfo.InvariantCulture),
+                        ["max_tokens"] = (options.MaxOutputTokens ?? 1200)
+                            .ToString(
+                                System.Globalization.CultureInfo.InvariantCulture)
+                    }
+                });
+        }
+
+        using var nativeRequest = new Request();
+        foreach (var message in messages)
+        {
+            ArgumentNullException.ThrowIfNull(message);
+            var item = message.Role == ChatRole.System
+                ? MessageItem.System(message.Text)
+                : message.Role == ChatRole.User
+                    ? MessageItem.User(message.Text)
+                    : message.Role == ChatRole.Assistant
+                        ? MessageItem.Assistant(message.Text)
+                        : string.Equals(
+                            message.Role.Value,
+                            "developer",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? MessageItem.Developer(message.Text)
+                            : throw new NotSupportedException(
+                            $"Foundry Local does not support chat role '{message.Role.Value}'.");
             FoundryLocalRequestOwnership.TransferToRequest(
                 item,
                 itemToAdd => nativeRequest.AddItem(itemToAdd));
         }
 
-        try
+        using var response = await session
+            .ProcessRequestAsync(nativeRequest, cancellationToken)
+            .ConfigureAwait(false);
+        var text = response
+            .OfType<MessageItem>()
+            .Select(message => message.IsSimpleText()
+                ? message.GetSimpleText()
+                : string.Concat(
+                    message.Parts
+                        .OfType<TextItem>()
+                        .Select(part => part.Text)))
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        if (string.IsNullOrWhiteSpace(text))
         {
-            using var response = await session
-                .ProcessRequestAsync(nativeRequest, timeoutCancellation.Token)
-                .ConfigureAwait(false);
-            var text = response
-                .OfType<MessageItem>()
-                .Select(message => message.IsSimpleText()
-                    ? message.GetSimpleText()
-                    : string.Concat(
-                        message.Parts
-                            .OfType<TextItem>()
-                            .Select(part => part.Text)))
-                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                throw new InvalidDataException(
-                    "Foundry Local returned an empty chat completion.");
-            }
+            throw new InvalidDataException(
+                "Foundry Local returned an empty chat completion.");
+        }
 
-            return text;
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        return new ChatResponse(
+            new ChatMessage(ChatRole.Assistant, text))
         {
-            throw new TimeoutException(
-                $"Foundry Local did not respond within {timeout}.");
+            ModelId = model.Id
+        };
+    }
+
+    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var response = await GetResponseAsync(
+                messages,
+                options,
+                cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var update in response.ToChatResponseUpdates())
+        {
+            yield return update;
         }
+    }
+
+    public object? GetService(Type serviceType, object? serviceKey = null)
+    {
+        ArgumentNullException.ThrowIfNull(serviceType);
+        if (serviceType.IsInstanceOfType(this))
+        {
+            return this;
+        }
+
+        return serviceType == typeof(ChatClientMetadata)
+            ? new ChatClientMetadata(
+                "microsoft.ai.foundry.local",
+                defaultModelId: model.Id)
+            : null;
+    }
+
+    public void Dispose()
+    {
+        // Model/session ownership belongs to FoundryLocalRuntimeSession.
     }
 }

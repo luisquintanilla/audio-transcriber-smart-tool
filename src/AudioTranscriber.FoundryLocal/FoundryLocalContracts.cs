@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Microsoft.Extensions.AI;
 using AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.FoundryLocal;
@@ -199,84 +200,6 @@ public sealed record FoundryLocalEnrichmentOptions
             : value.Trim();
 }
 
-public sealed record FoundryLocalChatMessage
-{
-    public FoundryLocalChatMessage(string role, string content)
-    {
-        if (string.IsNullOrWhiteSpace(role))
-        {
-            throw new ArgumentException("Chat message role cannot be empty.", nameof(role));
-        }
-
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            throw new ArgumentException("Chat message content cannot be empty.", nameof(content));
-        }
-
-        Role = role.Trim().ToLowerInvariant();
-        Content = content;
-    }
-
-    public string Role { get; }
-
-    public string Content { get; }
-}
-
-public sealed record FoundryLocalChatRequest
-{
-    public FoundryLocalChatRequest(
-        string modelId,
-        IEnumerable<FoundryLocalChatMessage> messages,
-        double temperature,
-        int maxOutputTokens)
-    {
-        if (string.IsNullOrWhiteSpace(modelId))
-        {
-            throw new ArgumentException("Model ID cannot be empty.", nameof(modelId));
-        }
-
-        ArgumentNullException.ThrowIfNull(messages);
-        var values = messages.ToArray();
-        if (values.Length == 0 || values.Any(message => message is null))
-        {
-            throw new ArgumentException(
-                "Chat requests must contain non-null messages.",
-                nameof(messages));
-        }
-
-        if (!double.IsFinite(temperature) || temperature < 0 || temperature > 2)
-        {
-            throw new ArgumentOutOfRangeException(nameof(temperature));
-        }
-
-        if (maxOutputTokens <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxOutputTokens));
-        }
-
-        ModelId = modelId.Trim();
-        Messages = Array.AsReadOnly(values);
-        Temperature = temperature;
-        MaxOutputTokens = maxOutputTokens;
-    }
-
-    public string ModelId { get; }
-
-    public IReadOnlyList<FoundryLocalChatMessage> Messages { get; }
-
-    public double Temperature { get; }
-
-    public int MaxOutputTokens { get; }
-}
-
-public interface IFoundryLocalChatClient
-{
-    Task<string> CompleteAsync(
-        FoundryLocalChatRequest request,
-        TimeSpan timeout,
-        CancellationToken cancellationToken = default);
-}
-
 public interface IFoundryLocalRuntime
 {
     Task<FoundryLocalRuntimeSession> PrepareAsync(
@@ -294,7 +217,7 @@ public sealed class FoundryLocalRuntimeSession : IAsyncDisposable
         string modelId,
         Uri? endpoint,
         string? cachePath,
-        IFoundryLocalChatClient chatClient,
+        IChatClient chatClient,
         Func<ValueTask>? disposeAsync = null)
     {
         if (string.IsNullOrWhiteSpace(modelAlias))
@@ -325,16 +248,26 @@ public sealed class FoundryLocalRuntimeSession : IAsyncDisposable
 
     public string? CachePath { get; }
 
-    public IFoundryLocalChatClient ChatClient { get; }
+    public IChatClient ChatClient { get; }
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref disposed, 1) != 0 || disposeAsync is null)
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
         {
             return;
         }
 
-        await disposeAsync().ConfigureAwait(false);
+        try
+        {
+            ChatClient.Dispose();
+        }
+        finally
+        {
+            if (disposeAsync is not null)
+            {
+                await disposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 }
 

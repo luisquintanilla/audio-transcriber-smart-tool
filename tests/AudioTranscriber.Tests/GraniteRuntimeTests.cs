@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Numerics.Tensors;
 using AudioTranscriber.Granite;
 using Microsoft.Extensions.AI;
+using System.Numerics.Tensors;
 
 namespace AudioTranscriber.Tests;
 

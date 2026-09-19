@@ -409,10 +409,12 @@ offline test suite.
 
 `src/AudioTranscriber.FoundryLocal` is a separately packaged adapter
 (`AudioTranscriber.FoundryLocal`) for the provider-neutral enrichment
-contracts. It references the optional Microsoft Foundry Local SDK and the
-documented OpenAI-compatible client surface; the core `AudioTranscriber` and
+contracts. It references the optional Microsoft Foundry Local SDK and adapts
+its native chat session to the vendored `Microsoft.Extensions.AI.IChatClient`,
+`ChatMessage`, `ChatOptions`, `ChatResponse`, and `ChatResponseUpdate`
+abstractions. The core `AudioTranscriber` and
 `AudioTranscriber.TranscriptProcessing` packages do not acquire those
-dependencies.
+Foundry dependencies.
 
 The model alias or model ID is required and is never guessed. The adapter
 discovers the local catalog, validates cached and loaded readiness, and reports
@@ -452,6 +454,13 @@ not download models or require a running local service. The opt-in test is
 enabled with `AUDIO_TRANSCRIBER_FOUNDRY_LOCAL_MODEL`; if that explicitly
 requested runtime or model is unavailable, it fails with the readiness
 diagnostic rather than falling back elsewhere.
+
+The `IChatClient` streaming surface is implemented as one response converted
+to one or more standard `ChatResponseUpdate` values because the current
+Foundry Local native SDK path used here is non-streaming. Source-linked
+evidence, chapter IDs, partial/fail-fast policy, and enrichment provenance
+remain provider-neutral transcript contracts rather than being forced into
+the generic chat abstraction.
 
 The adapter coordinates disposal with active enrichment calls and makes
 repeated/concurrent disposal safe. It tracks model-load ownership across

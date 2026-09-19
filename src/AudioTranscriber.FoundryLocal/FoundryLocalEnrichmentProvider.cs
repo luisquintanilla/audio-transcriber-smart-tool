@@ -1,5 +1,6 @@
 using System.Globalization;
 using AudioTranscriber.TranscriptProcessing;
+using Microsoft.Extensions.AI;
 
 namespace AudioTranscriber.FoundryLocal;
 
@@ -71,19 +72,13 @@ public sealed class FoundryLocalEnrichmentProvider
         await using var operation = await AcquireOperationAsync(cancellationToken)
             .ConfigureAwait(false);
         var runtimeSession = operation.Session;
-        var chatRequest = new FoundryLocalChatRequest(
-            runtimeSession.ModelId,
-            FoundryLocalPromptBuilder.BuildChapterPrompt(request.Chapter),
-            options.Temperature,
-            options.MaxOutputTokens);
-        var response = await runtimeSession.ChatClient
-            .CompleteAsync(
-                chatRequest,
-                options.RequestTimeout,
+        var response = await GetResponseAsync(
+                runtimeSession,
+                FoundryLocalPromptBuilder.BuildChapterPrompt(request.Chapter),
                 cancellationToken)
             .ConfigureAwait(false);
         return FoundryLocalResponseParser.ParseChapterSummary(
-            response,
+            response.Text,
             request.Chapter);
     }
 
@@ -95,18 +90,14 @@ public sealed class FoundryLocalEnrichmentProvider
         await using var operation = await AcquireOperationAsync(cancellationToken)
             .ConfigureAwait(false);
         var runtimeSession = operation.Session;
-        var chatRequest = new FoundryLocalChatRequest(
-            runtimeSession.ModelId,
-            FoundryLocalPromptBuilder.BuildOverallPrompt(request),
-            options.Temperature,
-            options.MaxOutputTokens);
-        var response = await runtimeSession.ChatClient
-            .CompleteAsync(
-                chatRequest,
-                options.RequestTimeout,
+        var response = await GetResponseAsync(
+                runtimeSession,
+                FoundryLocalPromptBuilder.BuildOverallPrompt(request),
                 cancellationToken)
             .ConfigureAwait(false);
-        return FoundryLocalResponseParser.ParseOverallSummary(response, request);
+        return FoundryLocalResponseParser.ParseOverallSummary(
+            response.Text,
+            request);
     }
 
     public async ValueTask DisposeAsync()
@@ -188,6 +179,53 @@ public sealed class FoundryLocalEnrichmentProvider
             return session;
         }
     }
+
+    private CancellationTokenSource CreateRequestCancellation(
+        CancellationToken cancellationToken)
+    {
+        var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        timeoutCancellation.CancelAfter(options.RequestTimeout);
+        return timeoutCancellation;
+    }
+
+    private async Task<ChatResponse> GetResponseAsync(
+        FoundryLocalRuntimeSession runtimeSession,
+        IReadOnlyList<ChatMessage> messages,
+        CancellationToken cancellationToken)
+    {
+        using var timeoutCancellation = CreateRequestCancellation(
+            cancellationToken);
+        try
+        {
+            return await runtimeSession.ChatClient
+                .GetResponseAsync(
+                    messages,
+                    CreateChatOptions(runtimeSession.ModelId),
+                    timeoutCancellation.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (
+            !cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Foundry Local did not respond within {options.RequestTimeout}.");
+        }
+        catch (OperationCanceledException) when (
+            cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+    }
+
+    private ChatOptions CreateChatOptions(string modelId) =>
+        new()
+        {
+            ModelId = modelId,
+            Temperature = (float)options.Temperature,
+            MaxOutputTokens = options.MaxOutputTokens,
+            ResponseFormat = ChatResponseFormat.Json
+        };
 
     private void ReleaseOperation()
     {

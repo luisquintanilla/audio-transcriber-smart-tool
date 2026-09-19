@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AudioTranscriber.TranscriptProcessing\AudioTranscriber.TranscriptProcessing.csproj" />
+    <ProjectReference Include="..\Vendored\dotnet-extensions\src\Libraries\Microsoft.Extensions.AI.Abstractions\Microsoft.Extensions.AI.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>
