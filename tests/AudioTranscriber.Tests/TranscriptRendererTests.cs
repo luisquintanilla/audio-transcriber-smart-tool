@@ -39,6 +39,40 @@ public sealed class TranscriptRendererTests
     }
 
     [Fact]
+    public void Json_renderer_preserves_fragment_boundaries_and_backward_compatible_shape()
+    {
+        var batch = new BatchTranscript(
+        [
+            new Transcript(
+                Path.Combine("recordings", "speech.wav"),
+                new ModelProvenance(
+                    "provider",
+                    "model",
+                    "package",
+                    "1.0.0",
+                    "fixture",
+                    "cache"),
+                [
+                    new TranscriptSegment(" first fragment ", TimeSpan.Zero, TimeSpan.FromSeconds(1)),
+                    new TranscriptSegment("second fragment", TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2))
+                ])
+        ]);
+
+        using var document = JsonDocument.Parse(new JsonTranscriptRenderer().Render(batch));
+        var transcript = Assert.Single(document.RootElement.EnumerateArray());
+        var segments = transcript.GetProperty("segments");
+
+        Assert.Equal("speech.wav", transcript.GetProperty("source").GetString());
+        Assert.Equal("provider", transcript.GetProperty("provider").GetString());
+        Assert.Equal("model", transcript.GetProperty("model").GetString());
+        Assert.Equal(2, segments.GetArrayLength());
+        Assert.Equal("first fragment", segments[0].GetProperty("text").GetString());
+        Assert.Equal("second fragment", segments[1].GetProperty("text").GetString());
+        Assert.Equal("00:00:01.000", segments[1].GetProperty("start").GetString());
+        Assert.DoesNotContain(Path.GetFullPath(Path.Combine("recordings", "speech.wav")), document.RootElement.ToString());
+    }
+
+    [Fact]
     public void Srt_renderer_uses_comma_milliseconds()
     {
         var rendered = new SrtTranscriptRenderer().Render(Batch());

@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,7 +21,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AudioTranscriber\AudioTranscriber.csproj" />
+    <ProjectReference Include="..\..\src\AudioTranscriber.TranscriptProcessing\AudioTranscriber.TranscriptProcessing.csproj" />
     <ProjectReference Include="..\..\src\audio-transcriber\audio-transcriber.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Fixtures\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

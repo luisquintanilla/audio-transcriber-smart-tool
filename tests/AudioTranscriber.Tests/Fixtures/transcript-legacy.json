@@ -1,0 +1,14 @@
+[
+  {
+    "source": "legacy.wav",
+    "model": "legacy-model",
+    "provider": "legacy-provider",
+    "segments": [
+      {
+        "start": "00:00:00.000",
+        "end": "00:00:01.250",
+        "text": "legacy fragment"
+      }
+    ]
+  }
+]
