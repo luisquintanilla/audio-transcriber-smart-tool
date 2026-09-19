@@ -174,13 +174,14 @@ public sealed record TranscriptSegmentMetadata(
     TimeSpan End,
     string? Speaker,
     double? Confidence,
-    IReadOnlyDictionary<string, string> SourceMetadata,
-    string Text)
+    IReadOnlyDictionary<string, string> SourceMetadata)
 {
+    public string? Text { get; init; }
+
     public static TranscriptSegmentMetadata From(TranscriptSegment segment)
     {
         ArgumentNullException.ThrowIfNull(segment);
-        return new(
+        return new TranscriptSegmentMetadata(
             segment.Id,
             segment.SourceId,
             segment.OriginalOrdinal,
@@ -191,13 +192,15 @@ public sealed record TranscriptSegmentMetadata(
             new ReadOnlyDictionary<string, string>(
                 new Dictionary<string, string>(
                     segment.SourceMetadata,
-                    StringComparer.Ordinal)),
-            segment.Text);
+                    StringComparer.Ordinal)))
+        {
+            Text = segment.Text
+        };
     }
 
     internal TranscriptSegment CreateSegment(string? text) =>
         new(
-            text ?? Text,
+            text ?? Text ?? string.Empty,
             Start,
             End,
             OriginalOrdinal,

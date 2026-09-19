@@ -79,8 +79,10 @@ public sealed class TranscriptChunkingDependencyTests
             new Dictionary<string, string>
             {
                 ["channel"] = "left"
-            },
-            "candidate window");
+            })
+        {
+            Text = "candidate window"
+        };
 
         return new Processing.TranscriptChunkScoringRequest(
             "candidate window",

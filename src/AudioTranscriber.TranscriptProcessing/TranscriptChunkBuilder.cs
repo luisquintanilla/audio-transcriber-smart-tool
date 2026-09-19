@@ -211,7 +211,7 @@ public sealed class TranscriptChunkBuilder
         }
 
         var best = new Partition?[run.Count + 1];
-        best[0] = new Partition(0, 0, []);
+        best[0] = new Partition(0, 0, -1, 0);
 
         for (var start = 0; start < run.Count; start++)
         {
@@ -233,7 +233,8 @@ public sealed class TranscriptChunkBuilder
                     prefix.ShortWindowCount +
                         (candidateDuration < options.MinimumDuration ? 1 : 0),
                     prefix.WindowCount + 1,
-                    [.. prefix.Ends, end + 1]);
+                    start,
+                    end + 1);
                 if (best[end + 1] is not { } existing ||
                     candidate.IsBetterThan(existing))
                 {
@@ -245,8 +246,15 @@ public sealed class TranscriptChunkBuilder
         var final = best[^1]
             ?? throw new InvalidOperationException(
                 "Transcript segments could not be partitioned into windows.");
+        var ends = new List<int>();
+        for (var state = final; state.EndIndex > 0; state = best[state.PreviousIndex]!)
+        {
+            ends.Add(state.EndIndex);
+        }
+
+        ends.Reverse();
         var startIndex = 0;
-        foreach (var endIndex in final.Ends)
+        foreach (var endIndex in ends)
         {
             output.Add(
                 new TranscriptChunkWindow(
@@ -353,7 +361,8 @@ public sealed class TranscriptChunkBuilder
     private sealed record Partition(
         int ShortWindowCount,
         int WindowCount,
-        IReadOnlyList<int> Ends)
+        int PreviousIndex,
+        int EndIndex)
     {
         public bool IsBetterThan(Partition other) =>
             ShortWindowCount < other.ShortWindowCount ||

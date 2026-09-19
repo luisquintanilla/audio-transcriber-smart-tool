@@ -158,6 +158,27 @@ public sealed class TranscriptIngestionAdapterTests
     }
 
     [Fact]
+    public void TranscriptSegmentMetadata_preserves_the_legacy_nine_argument_constructor()
+    {
+        var metadata = new Processing.TranscriptSegmentMetadata(
+            "segment-id",
+            "source-id",
+            4,
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(1),
+            "speaker",
+            0.5,
+            new Dictionary<string, string>
+            {
+                ["channel"] = "left"
+            });
+
+        Assert.Null(metadata.Text);
+        Assert.Equal("segment-id", metadata.Id);
+        Assert.Equal("left", metadata.SourceMetadata["channel"]);
+    }
+
+    [Fact]
     public void Map_preserves_input_document_order()
     {
         var first = CreateDocument("first.wav");

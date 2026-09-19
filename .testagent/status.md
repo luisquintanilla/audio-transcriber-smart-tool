@@ -17,7 +17,7 @@ contracts implemented by this PR:
 | Deterministic chapter artifacts | `Generate_SameChunkResult_ProducesEquivalentArtifacts`; `Generate_PreservesChunkOrder`; `Serialize_SameArtifacts_ProducesIdenticalOutput`; `Generate_PreservesSourceIdsAndMetadata`; `Generate_PreservesCollidingMetadataKeysWithoutSyntheticKeyCollisions`; `Generate_UsesVersionedArtifactContract` |
 | Cancellation | `BuildAsync_CancellationBeforeWork_ThrowsOperationCanceledException`; `BuildAsync_CancellationDuringEmbedding_StopsAndThrowsOperationCanceledException`; `BuildAsync_CancellationDuringScoring_StopsAndThrowsOperationCanceledException`; `GenerateAsync_CancellationIsPropagated` |
 | Propagated errors | `BuildAsync_PropagatesEmbeddingProviderError`; `BuildAsync_PropagatesChunkScoringError` |
-| No real model integrations, CLI, manifest, packages, CI, or unrelated changes | Five additive test files plus one related adapter regression, three production processing files, three `.testagent` artifacts, and the related README section changed; no model/provider/runtime or higher DataIngestion pipeline was added |
+| No real model integrations, CLI, manifest, CI, or unrelated changes | Five additive test files plus two related adapter regressions, three production processing files, three `.testagent` artifacts, and the related README section changed; `System.Numerics.Tensors` 10.0.12 is the required vector primitive dependency, with no model/provider/runtime or higher DataIngestion pipeline added |
 | Report compile blockers from missing production types | Initial compile blockers were removed by the production contracts implemented in this PR |
 
 The chapter-generation API exposes no deterministic mid-generation cancellation
@@ -86,6 +86,7 @@ documented broad exception behavior without inventing members or messages.
 ### Existing adapter regression
 
 - `TranscriptIngestionAdapterTests.Map_preserves_absent_provenance_source_and_detaches_read_only_metadata`
+- `TranscriptIngestionAdapterTests.TranscriptSegmentMetadata_preserves_the_legacy_nine_argument_constructor`
 
 ## Validation
 
@@ -103,11 +104,10 @@ dotnet test .\AudioTranscriber.sln
 ```
 
 The initial scoped and full builds/tests stopped at compilation while the
-production declarations were absent. After implementing the contracts and
-builder, the focused chunking/artifact/ingestion run passed 49 tests. The
-final Release solution build completed with 0 warnings and 0 errors, and the
-final Release solution test run passed 205 tests with 1 pre-existing opt-in
-model smoke test skipped.
+production declarations were absent. After implementing the contracts and builder, the focused
+chunking/artifact/ingestion run passed 50 tests. The final Release solution
+build completed with 0 warnings and 0 errors, and the final Release solution
+test run passed 206 tests with 1 pre-existing opt-in model smoke test skipped.
 
 The initial compile blockers were limited to the production declarations added
 by this PR:
@@ -125,7 +125,7 @@ by this PR:
 - Pseudo-mutation review: the canonical boundary, duration/gap,
   dependency-request, deterministic-output, cosine-similarity, and
   non-vacuous-gap assertions are covered by the focused suite.
-- Assertion-quality review: final review passed. All 38 focused tests have substantive
+- Assertion-quality review: final review passed. All 50 focused tests have substantive
   assertions; no assertion-free or wholly trivial tests remain. Equality,
   structural, exception, negative, collection, and dependency side-effect
   assertions are used where applicable.
