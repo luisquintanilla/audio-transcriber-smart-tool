@@ -62,6 +62,8 @@ public sealed class TranscriptIngestionAdapterTests
         Assert.Equal("offline", mapped.Provenance.Source);
         Assert.Equal("cache", mapped.Provenance.CachePath);
         Assert.Equal("test", mapped.Provenance.Metadata["tenant"]);
+        Assert.NotSame(document.Provenance.Metadata, mapped.Provenance.Metadata);
+        Assert.Equal(document.Provenance.Metadata, mapped.Provenance.Metadata);
         Assert.Equal(["first", "second"], mapped.Segments.Select(segment => segment.Text));
         Assert.Equal("first second", mapped.Text);
 
@@ -145,6 +147,26 @@ public sealed class TranscriptIngestionAdapterTests
             () => new Ingestion.TranscriptIngestionAdapter().Map(
                 Documents(),
                 cancellation.Token));
+    }
+
+    [Fact]
+    public void Map_checks_cancellation_before_enumerating_documents()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var enumerated = false;
+
+        IEnumerable<Processing.TranscriptDocument> Documents()
+        {
+            enumerated = true;
+            yield return CreateDocument("document.wav", 0);
+        }
+
+        Assert.Throws<OperationCanceledException>(
+            () => new Ingestion.TranscriptIngestionAdapter().Map(
+                Documents(),
+                cancellation.Token));
+        Assert.False(enumerated);
     }
 
     [Fact]

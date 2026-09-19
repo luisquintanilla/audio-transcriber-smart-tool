@@ -42,6 +42,7 @@ public sealed class TranscriptIngestionAdapter
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(documents);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var mapped = new List<TranscriptIngestionDocument>();
         foreach (var document in documents)

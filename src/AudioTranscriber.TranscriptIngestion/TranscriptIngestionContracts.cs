@@ -70,7 +70,8 @@ public sealed class TranscriptIngestionProvenance
         PackageVersion = provenance.PackageVersion;
         Source = provenance.Source;
         CachePath = provenance.CachePath;
-        Metadata = provenance.Metadata;
+        Metadata = new ReadOnlyDictionary<string, string>(
+            new Dictionary<string, string>(provenance.Metadata, StringComparer.Ordinal));
     }
 
     /// <summary>
