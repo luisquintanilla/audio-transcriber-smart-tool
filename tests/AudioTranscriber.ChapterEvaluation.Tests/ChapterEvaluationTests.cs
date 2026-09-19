@@ -201,20 +201,20 @@ public sealed class ChapterEvaluationTests
         var predictions = new[]
         {
             new ChapterEvaluationPrediction(
-                "prediction-a",
-                TimeSpan.Zero,
+                "prediction-c",
                 TimeSpan.FromSeconds(10),
-                new[] { "seg-a", "seg-b" }),
+                TimeSpan.FromSeconds(18),
+                new[] { "seg-d" }),
             new ChapterEvaluationPrediction(
                 "prediction-b",
                 TimeSpan.FromSeconds(12),
                 TimeSpan.FromSeconds(14),
                 new[] { "seg-c" }),
             new ChapterEvaluationPrediction(
-                "prediction-c",
+                "prediction-a",
+                TimeSpan.Zero,
                 TimeSpan.FromSeconds(10),
-                TimeSpan.FromSeconds(18),
-                new[] { "seg-d" })
+                new[] { "seg-a", "seg-b" })
         };
 
         var metrics = ChapterEvaluationMetricCalculator.Evaluate(
