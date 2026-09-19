@@ -185,3 +185,13 @@ Run focused and full Release tests, restore/build with 0 warnings/errors,
 package graph/pack checks, and `git diff --check`. Reply to and resolve both
 accepted inline threads only after the rebased commit is pushed and the
 worktree is clean.
+
+## Review-fix validation
+
+- Focused Release enrichment tests: 10 passed, 0 failed.
+- `dotnet restore .\AudioTranscriber.sln --configfile .\NuGet.config --verbosity minimal`: passed.
+- Release solution build: 0 warnings, 0 errors.
+- Release solution tests: 254 core tests plus 15 evaluation tests passed; 1
+  pre-existing opt-in Whisper smoke test skipped; 0 failed.
+- `dotnet list .\AudioTranscriber.sln package --include-transitive`: passed.
+- Release library and CLI packs succeeded.

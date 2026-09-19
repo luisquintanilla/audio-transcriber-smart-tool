@@ -81,7 +81,12 @@ public sealed record TranscriptChapterEnrichmentOptions
                         nameof(ProviderConfiguration));
                 }
 
-                configuration[entry.Key.Trim()] = entry.Value;
+                if (!configuration.TryAdd(entry.Key.Trim(), entry.Value))
+                {
+                    throw new ArgumentException(
+                        $"Duplicate provider configuration key '{entry.Key.Trim()}'.",
+                        nameof(ProviderConfiguration));
+                }
             }
         }
 
@@ -552,7 +557,7 @@ public sealed class TranscriptChapterEnrichment
 
     public IReadOnlyList<string> SourceIds { get; }
 
-    public IReadOnlyDictionary<string, string> SourceMetadata { get; }
+    public IReadOnlyList<TranscriptChapterSourceMetadata> SourceMetadata { get; }
 
     public TranscriptChapterBoundaryMetadata Boundary { get; }
 

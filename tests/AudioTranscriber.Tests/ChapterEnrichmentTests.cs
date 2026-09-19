@@ -186,6 +186,32 @@ public sealed class ChapterEnrichmentTests
     }
 
     [Fact]
+    public async Task Options_reject_provider_configuration_keys_that_collide_after_trimming()
+    {
+        var artifact = CreateArtifact(
+            Segment("configuration", 0, 1, 0, "segment-configuration"));
+        var enricher = new ScriptedEnricher(
+            (_, _) => new Processing.TranscriptChapterSummary("unreachable"));
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => new Processing.TranscriptChapterEnrichmentOrchestrator(enricher)
+                .EnrichAsync(
+                    artifact,
+                    new Processing.TranscriptChapterEnrichmentOptions
+                    {
+                        ProviderConfiguration = new Dictionary<string, string>
+                        {
+                            [" duplicate "] = "first",
+                            ["duplicate"] = "second"
+                        }
+                    }));
+
+        Assert.Equal("ProviderConfiguration", exception.ParamName);
+        Assert.Contains("duplicate", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(0, enricher.CallCount);
+    }
+
+    [Fact]
     public async Task PreservePartial_records_missing_and_provider_failures_without_fallback()
     {
         var artifact = CreateArtifact(
@@ -312,6 +338,33 @@ public sealed class ChapterEnrichmentTests
         await Assert.ThrowsAsync<IOException>(
             () => writer.WriteAsync(destinationDirectory, document));
         Assert.Empty(Directory.EnumerateFiles(fixture.Root, "*.partial"));
+    }
+
+    [Fact]
+    public async Task Enrichment_writer_serializes_valid_utf8_without_full_byte_array_duplication()
+    {
+        using var fixture = new TemporaryFixture();
+        var artifact = CreateArtifact(
+            Segment("utf8 output", 0, 1, 0, "segment-utf8"));
+        var document = await new Processing.TranscriptChapterEnrichmentOrchestrator(
+                new ScriptedEnricher(
+                    (_, _) => new Processing.TranscriptChapterSummary("summary \u00e9")))
+            .EnrichAsync(artifact);
+        var output = fixture.Path("utf8-enrichment.json");
+
+        await new Processing.TranscriptChapterEnrichmentArtifactFileWriter()
+            .WriteAsync(output, document);
+
+        var bytes = File.ReadAllBytes(output);
+        Assert.NotEmpty(bytes);
+        Assert.NotEqual(0xEF, bytes[0]);
+        using var json = JsonDocument.Parse(bytes);
+        Assert.Equal("1.0", json.RootElement.GetProperty("schemaVersion").GetString());
+        Assert.Equal(
+            "summary \u00e9",
+            json.RootElement.GetProperty("chapters")[0]
+                .GetProperty("summary")
+                .GetString());
     }
 
     [Fact]
