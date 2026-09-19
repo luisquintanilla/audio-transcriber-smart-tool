@@ -599,6 +599,40 @@ public sealed class ChapterEvaluationTests
     }
 
     [Fact]
+    public void FixtureLoader_RejectsOutOfRangeTimestamps()
+    {
+        var exception = Assert.Throws<InvalidDataException>(
+            () => LoadInlineFixture(
+                new[]
+                {
+                    new
+                    {
+                        id = "seg-1",
+                        ordinal = 0,
+                        start = "00:00:00",
+                        end = "9999999999:00:00",
+                        text = "one"
+                    }
+                },
+                new[]
+                {
+                    new
+                    {
+                        id = "chapter-1",
+                        label = "One",
+                        start = "00:00:00",
+                        end = "9999999999:00:00",
+                        sourceSegmentIds = new[] { "seg-1" }
+                    }
+                }));
+
+        Assert.Contains(
+            "outside the supported range",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Metrics_AcceptContiguousPredictionWithNonConsecutiveOrdinals()
     {
         var fixture = LoadInlineFixture(

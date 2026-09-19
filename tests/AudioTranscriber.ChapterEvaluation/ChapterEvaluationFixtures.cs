@@ -376,7 +376,7 @@ public static class ChapterEvaluationFixtureLoader
                 out var hours))
         {
             throw new InvalidDataException(
-                $"Fixture field '{fieldName}' must use HH:MM:SS[.fffffff].");
+                $"Fixture field '{fieldName}' is outside the supported range.");
         }
 
         var minutes = int.Parse(
