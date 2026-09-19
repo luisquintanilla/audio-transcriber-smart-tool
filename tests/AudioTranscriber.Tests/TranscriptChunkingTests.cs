@@ -771,6 +771,7 @@ public sealed class TranscriptChunkingTests
 
         Assert.Equal("unsupported_schema_version", exception.Code);
         Assert.Equal("$.schemaVersion", exception.JsonPath);
+        Assert.Contains("'2.0'", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

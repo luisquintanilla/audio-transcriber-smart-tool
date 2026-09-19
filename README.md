@@ -276,8 +276,10 @@ keeps only the transcript-specific orchestration around canonical elements.
 
 `TranscriptChapterArtifactGenerator` projects non-gap windows into an ordered,
 versioned `TranscriptChapterArtifactDocument` and provides deterministic JSON
-serialization. No embedding implementation, model asset, network dependency,
-CLI capability, or Smart Tool manifest entry is required.
+serialization. Structurally built chapters retain a `null` score, while
+asynchronously evaluated chapters contain their numeric model score. No
+embedding implementation, model asset, network dependency, CLI capability, or
+Smart Tool manifest entry is required.
 
 ## Clean local-tool installation
 

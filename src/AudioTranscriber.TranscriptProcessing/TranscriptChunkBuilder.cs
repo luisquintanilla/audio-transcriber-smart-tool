@@ -324,7 +324,8 @@ public sealed class TranscriptChunkBuilder
             throw new TranscriptFormatException(
                 "unsupported_schema_version",
                 "$.schemaVersion",
-                $"Expected '{TranscriptSchema.CurrentVersion}'.");
+                $"Expected '{TranscriptSchema.CurrentVersion}', but received " +
+                $"'{metadata.SchemaVersion}'.");
         }
 
         var elements = new List<TranscriptChunkSourceElement>();
