@@ -1,3 +1,4 @@
+using Microsoft.Extensions.AI;
 using Processing = AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.Tests;
@@ -321,14 +322,25 @@ public sealed class ChapterArtifactTests
     }
 
     private sealed class DeterministicEmbeddingProvider
-        : Processing.ITranscriptEmbeddingProvider
+        : IEmbeddingGenerator<string, Embedding<float>>
     {
-        public ValueTask<Processing.TranscriptEmbeddingResponse> EmbedAsync(
-            Processing.TranscriptEmbeddingRequest request,
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values,
+            EmbeddingGenerationOptions? options = null,
             CancellationToken cancellationToken = default)
         {
-            return ValueTask.FromResult(
-                new Processing.TranscriptEmbeddingResponse([0.125f, -0.25f, 0.5f]));
+            return Task.FromResult(
+                new GeneratedEmbeddings<Embedding<float>>(
+                [
+                    new Embedding<float>(new float[] { 0.125f, -0.25f, 0.5f })
+                ]));
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey) =>
+            serviceKey is null && serviceType.IsInstanceOfType(this) ? this : null;
+
+        public void Dispose()
+        {
         }
     }
 

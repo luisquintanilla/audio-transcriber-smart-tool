@@ -1,3 +1,4 @@
+using Microsoft.Extensions.AI;
 using Processing = AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.Tests;
@@ -156,8 +157,8 @@ public sealed class TranscriptChunkingBehaviorTests
         Assert.NotEmpty(firstEmbedding.Requests);
         Assert.NotEmpty(firstScoring.Requests);
         Assert.Equal(
-            firstEmbedding.Requests.Select(request => request.Text),
-            secondEmbedding.Requests.Select(request => request.Text));
+            firstEmbedding.Requests,
+            secondEmbedding.Requests);
         Assert.Equal(
             firstScoring.Requests.Select(request => (request.Text, request.Start, request.End)),
             secondScoring.Requests.Select(request => (request.Text, request.Start, request.End)));
@@ -326,9 +327,9 @@ public sealed class TranscriptChunkingBehaviorTests
     }
 
     private sealed class ControlledEmbeddingProvider
-        : Processing.ITranscriptEmbeddingProvider
+        : IEmbeddingGenerator<string, Embedding<float>>
     {
-        public List<Processing.TranscriptEmbeddingRequest> Requests { get; } = [];
+        public List<string> Requests { get; } = [];
 
         public int CallCount { get; private set; }
 
@@ -336,12 +337,13 @@ public sealed class TranscriptChunkingBehaviorTests
 
         public CancellationTokenSource? CancelSourceOnCall { get; init; }
 
-        public async ValueTask<Processing.TranscriptEmbeddingResponse> EmbedAsync(
-            Processing.TranscriptEmbeddingRequest request,
+        public async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values,
+            EmbeddingGenerationOptions? options = null,
             CancellationToken cancellationToken = default)
         {
             CallCount++;
-            Requests.Add(request);
+            Requests.Add(Assert.Single(values));
             CancelSourceOnCall?.Cancel();
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -351,7 +353,17 @@ public sealed class TranscriptChunkingBehaviorTests
             }
 
             await Task.Yield();
-            return new Processing.TranscriptEmbeddingResponse([0.125f, -0.25f, 0.5f]);
+            return
+            [
+                new Embedding<float>(new float[] { 0.125f, -0.25f, 0.5f })
+            ];
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey) =>
+            serviceKey is null && serviceType.IsInstanceOfType(this) ? this : null;
+
+        public void Dispose()
+        {
         }
     }
 

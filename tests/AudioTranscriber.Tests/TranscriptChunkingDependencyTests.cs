@@ -1,3 +1,4 @@
+using Microsoft.Extensions.AI;
 using Processing = AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.Tests;
@@ -5,17 +6,18 @@ namespace AudioTranscriber.Tests;
 public sealed class TranscriptChunkingDependencyTests
 {
     [Fact]
-    public async Task EmbeddingFake_ImplementsTheNarrowEmbeddingContract()
+    public async Task EmbeddingFake_ImplementsMicrosoftExtensionsAiContract()
     {
         var fake = new DeterministicEmbeddingProvider();
-        Processing.ITranscriptEmbeddingProvider provider = fake;
+        IEmbeddingGenerator<string, Embedding<float>> provider = fake;
 
-        var response = await provider.EmbedAsync(
-            new Processing.TranscriptEmbeddingRequest("opening statement"),
-            CancellationToken.None);
+        var response = await provider.GenerateAsync(
+            ["opening statement"],
+            cancellationToken: CancellationToken.None);
+        var embedding = Assert.Single(response);
 
-        Assert.Equal([0.125f, -0.25f, 0.5f], response.Vector);
-        Assert.Equal("opening statement", fake.LastRequest!.Text);
+        Assert.Equal([0.125f, -0.25f, 0.5f], embedding.Vector.ToArray());
+        Assert.Equal("opening statement", fake.LastRequest);
         Assert.Equal(1, fake.CallCount);
     }
 
@@ -36,6 +38,9 @@ public sealed class TranscriptChunkingDependencyTests
         Assert.Equal(TimeSpan.FromSeconds(1), lastRequest.Start);
         Assert.Equal(TimeSpan.FromSeconds(2), lastRequest.End);
         Assert.Equal("left", lastRequest.Segments.Single().SourceMetadata["channel"]);
+        Assert.Equal(
+            [0.25f, -0.5f],
+            lastRequest.Embedding!.Vector.ToArray());
     }
 
     [Fact]
@@ -47,12 +52,12 @@ public sealed class TranscriptChunkingDependencyTests
         var embeddingFake = new DeterministicEmbeddingProvider();
         var scoringFake = new DeterministicChunkScoringProvider();
 
-        Processing.ITranscriptEmbeddingProvider embedding = embeddingFake;
+        IEmbeddingGenerator<string, Embedding<float>> embedding = embeddingFake;
         Processing.ITranscriptChunkScoringProvider scorer = scoringFake;
 
-        await embedding.EmbedAsync(
-            new Processing.TranscriptEmbeddingRequest("cancelled window"),
-            token);
+        await embedding.GenerateAsync(
+            ["cancelled window"],
+            cancellationToken: token);
         await scorer.ScoreAsync(CreateScoringRequest(), token);
 
         Assert.True(embeddingFake.ReceivedCancellation);
@@ -79,13 +84,14 @@ public sealed class TranscriptChunkingDependencyTests
             "candidate window",
             [segment],
             segment.Start,
-            segment.End);
+            segment.End,
+            new Embedding<float>(new float[] { 0.25f, -0.5f }));
     }
 
     private sealed class DeterministicEmbeddingProvider
-        : Processing.ITranscriptEmbeddingProvider
+        : IEmbeddingGenerator<string, Embedding<float>>
     {
-        public Processing.TranscriptEmbeddingRequest? LastRequest { get; private set; }
+        public string? LastRequest { get; private set; }
 
         public CancellationToken LastCancellationToken { get; private set; }
 
@@ -93,15 +99,26 @@ public sealed class TranscriptChunkingDependencyTests
 
         public int CallCount { get; private set; }
 
-        public ValueTask<Processing.TranscriptEmbeddingResponse> EmbedAsync(
-            Processing.TranscriptEmbeddingRequest request,
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<string> values,
+            EmbeddingGenerationOptions? options = null,
             CancellationToken cancellationToken = default)
         {
-            LastRequest = request;
+            LastRequest = Assert.Single(values);
             LastCancellationToken = cancellationToken;
             CallCount++;
-            return ValueTask.FromResult(
-                new Processing.TranscriptEmbeddingResponse([0.125f, -0.25f, 0.5f]));
+            return Task.FromResult(
+                new GeneratedEmbeddings<Embedding<float>>(
+                [
+                    new Embedding<float>(new float[] { 0.125f, -0.25f, 0.5f })
+                ]));
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey) =>
+            serviceKey is null && serviceType.IsInstanceOfType(this) ? this : null;
+
+        public void Dispose()
+        {
         }
     }
 

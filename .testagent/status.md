@@ -8,7 +8,7 @@ contracts implemented by this PR:
 
 | Requirement | Evidence |
 |---|---|
-| Narrow interfaces for embeddings and chunk scoring | `EmbeddingFake_ImplementsTheNarrowEmbeddingContract`; `ScoringFake_ImplementsTheNarrowChunkScoringContract`; `ChunkingDependencies_AcceptCancellation` |
+| Standard embedding abstraction and domain-specific chunk scoring | `EmbeddingFake_ImplementsMicrosoftExtensionsAiContract`; `ScoringFake_ImplementsTheNarrowChunkScoringContract`; `ChunkingDependencies_AcceptCancellation` |
 | Transcript-aware chunk/window construction preserving source segment IDs and metadata | `Build_SingleSegment_PreservesSourceIdAndMetadata`; `Build_MultipleSegments_PreservesAllSourceIdsAndMetadata`; `Generate_PreservesSourceIdsAndMetadata` |
 | Snapped segment boundaries | `Build_SnapsStartToSourceSegmentBoundary`; `Build_SnapsEndToSourceSegmentBoundary`; `Build_SnapsInternalStartToSourceSegmentBoundary`; `Build_SnapsInternalEndToSourceSegmentBoundary` |
 | Explicit gaps and empty input | `Build_EmptyTranscript_ReturnsEmptyResult`; `Build_GapBetweenSegments_EmitsExplicitGap`; `Build_GapAtChunkBoundary_PreservesGapSemantics`; `Generate_EmptyChunkResult_ProducesDeterministicEmptyArtifact` |
@@ -32,7 +32,7 @@ documented broad exception behavior without inventing members or messages.
 
 ### `tests/AudioTranscriber.Tests/TranscriptChunkingDependencyTests.cs` (3)
 
-- `EmbeddingFake_ImplementsTheNarrowEmbeddingContract`
+- `EmbeddingFake_ImplementsMicrosoftExtensionsAiContract`
 - `ScoringFake_ImplementsTheNarrowChunkScoringContract`
 - `ChunkingDependencies_AcceptCancellation`
 
@@ -107,9 +107,9 @@ by this PR:
 
 - `TranscriptChunkBuilder`
 - `TranscriptChunkingOptions`
-- `ITranscriptEmbeddingProvider`
-- `TranscriptEmbeddingRequest`
-- `TranscriptEmbeddingResponse`
+- `IEmbeddingGenerator<string, Embedding<float>>`
+- `Embedding<float>`
+- `GeneratedEmbeddings<Embedding<float>>`
 - `ITranscriptChunkScoringProvider`
 - `TranscriptChunkScoringRequest`
 

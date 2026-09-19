@@ -1,3 +1,5 @@
+using Microsoft.Extensions.AI;
+
 namespace AudioTranscriber.TranscriptProcessing;
 
 /// <summary>
@@ -5,7 +7,7 @@ namespace AudioTranscriber.TranscriptProcessing;
 /// </summary>
 public sealed class TranscriptChunkBuilder
 {
-    private readonly ITranscriptEmbeddingProvider? embeddingProvider;
+    private readonly IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator;
     private readonly ITranscriptChunkScoringProvider? scoringProvider;
 
     public TranscriptChunkBuilder()
@@ -13,11 +15,11 @@ public sealed class TranscriptChunkBuilder
     }
 
     public TranscriptChunkBuilder(
-        ITranscriptEmbeddingProvider embeddingProvider,
+        IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
         ITranscriptChunkScoringProvider scoringProvider)
     {
-        this.embeddingProvider = embeddingProvider
-            ?? throw new ArgumentNullException(nameof(embeddingProvider));
+        this.embeddingGenerator = embeddingGenerator
+            ?? throw new ArgumentNullException(nameof(embeddingGenerator));
         this.scoringProvider = scoringProvider
             ?? throw new ArgumentNullException(nameof(scoringProvider));
     }
@@ -59,19 +61,27 @@ public sealed class TranscriptChunkBuilder
                 continue;
             }
 
-            var embeddingProvider = this.embeddingProvider
+            var embeddingGenerator = this.embeddingGenerator
                 ?? throw new InvalidOperationException(
-                    "An embedding provider is required for asynchronous chunk evaluation.");
+                    "An embedding generator is required for asynchronous chunk evaluation.");
             var scoringProvider = this.scoringProvider
                 ?? throw new InvalidOperationException(
                     "A chunk scoring provider is required for asynchronous chunk evaluation.");
 
-            var embedding = await embeddingProvider
-                .EmbedAsync(
-                    new TranscriptEmbeddingRequest(window.Text),
-                    cancellationToken)
+            var embeddings = await embeddingGenerator
+                .GenerateAsync(
+                    [window.Text],
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            ArgumentNullException.ThrowIfNull(embedding);
+            if (embeddings.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    "Embedding generators must return one embedding per input.");
+            }
+
+            var embedding = embeddings[0]
+                ?? throw new InvalidOperationException(
+                    "Embedding generators must not return null embeddings.");
             cancellationToken.ThrowIfCancellationRequested();
 
             var score = await scoringProvider
@@ -81,7 +91,7 @@ public sealed class TranscriptChunkBuilder
                         window.SourceSegments,
                         window.Start,
                         window.End,
-                        embedding.Vector),
+                        embedding),
                     cancellationToken)
                 .ConfigureAwait(false);
             if (!double.IsFinite(score))

@@ -259,8 +259,10 @@ deterministic windows aligned to complete source segments, retains source IDs
 and metadata, and represents timing gaps as explicit empty windows. Minimum and
 maximum durations are applied without splitting a source segment. The
 synchronous API is structural and offline; `BuildAsync` optionally evaluates
-content windows through the narrow `ITranscriptEmbeddingProvider` and
-`ITranscriptChunkScoringProvider` seams, so model runtimes remain outside this
+content windows through
+`IEmbeddingGenerator<string, Embedding<float>>` from the lightweight
+`Microsoft.Extensions.AI.Abstractions` dependency and the domain-specific
+`ITranscriptChunkScoringProvider` seam, so model runtimes remain outside this
 package.
 
 `TranscriptChapterArtifactGenerator` projects non-gap windows into an ordered,

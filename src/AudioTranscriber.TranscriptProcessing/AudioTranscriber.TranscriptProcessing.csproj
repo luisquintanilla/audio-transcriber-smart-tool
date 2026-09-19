@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Vendored\dotnet-extensions\src\Libraries\Microsoft.Extensions.DataIngestion.Abstractions\Microsoft.Extensions.DataIngestion.Abstractions.csproj" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.10.0" />
   </ItemGroup>
 
 </Project>

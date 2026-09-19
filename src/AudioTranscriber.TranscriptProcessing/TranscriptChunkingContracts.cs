@@ -1,60 +1,6 @@
+using Microsoft.Extensions.AI;
+
 namespace AudioTranscriber.TranscriptProcessing;
-
-/// <summary>
-/// A narrow embedding request that does not depend on a model SDK.
-/// </summary>
-public sealed record TranscriptEmbeddingRequest
-{
-    public TranscriptEmbeddingRequest(string text)
-    {
-        Text = RequireText(text, nameof(text));
-    }
-
-    public string Text { get; }
-
-    private static string RequireText(string value, string parameterName) =>
-        string.IsNullOrWhiteSpace(value)
-            ? throw new ArgumentException("Embedding text cannot be empty.", parameterName)
-            : value.Trim();
-}
-
-/// <summary>
-/// A model-independent embedding response.
-/// </summary>
-public sealed record TranscriptEmbeddingResponse
-{
-    public TranscriptEmbeddingResponse(IEnumerable<float> vector)
-    {
-        ArgumentNullException.ThrowIfNull(vector);
-
-        var values = vector.ToArray();
-        if (values.Length == 0)
-        {
-            throw new ArgumentException("Embedding vectors cannot be empty.", nameof(vector));
-        }
-
-        if (values.Any(value => !float.IsFinite(value)))
-        {
-            throw new ArgumentException(
-                "Embedding vectors must contain only finite values.",
-                nameof(vector));
-        }
-
-        Vector = Array.AsReadOnly(values);
-    }
-
-    public IReadOnlyList<float> Vector { get; }
-}
-
-/// <summary>
-/// Supplies embeddings without coupling transcript processing to a model runtime.
-/// </summary>
-public interface ITranscriptEmbeddingProvider
-{
-    ValueTask<TranscriptEmbeddingResponse> EmbedAsync(
-        TranscriptEmbeddingRequest request,
-        CancellationToken cancellationToken = default);
-}
 
 /// <summary>
 /// A candidate window supplied to a model-independent chunk scorer.
@@ -66,7 +12,7 @@ public sealed record TranscriptChunkScoringRequest
         IEnumerable<TranscriptSegment> segments,
         TimeSpan start,
         TimeSpan end,
-        IReadOnlyList<float>? embedding = null)
+        Embedding<float>? embedding = null)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -109,9 +55,7 @@ public sealed record TranscriptChunkScoringRequest
         Segments = Array.AsReadOnly(sourceSegments);
         Start = start;
         End = end;
-        Embedding = embedding is null
-            ? null
-            : Array.AsReadOnly(embedding.ToArray());
+        Embedding = embedding;
     }
 
     public string Text { get; }
@@ -122,7 +66,7 @@ public sealed record TranscriptChunkScoringRequest
 
     public TimeSpan End { get; }
 
-    public IReadOnlyList<float>? Embedding { get; }
+    public Embedding<float>? Embedding { get; }
 }
 
 /// <summary>
