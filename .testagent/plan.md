@@ -16,9 +16,10 @@ preview2 higher `SemanticSimilarityChunker` was not vendored because its
 `IngestionChunk` output cannot preserve the source element identity required
 for transcript timing and provenance. No provider, model, CLI, manifest, or
 higher DataIngestion pipeline dependency was added. The focused
-chunking/artifact/ingestion run passes 51 tests; the Release solution build has
-0 warnings and 0 errors; the Release solution test run passes 207 tests with 1
-pre-existing opt-in model smoke test skipped.
+chunking/artifact/ingestion run passes 54 tests; the Release solution build has
+0 warnings and 0 errors. The Release solution test run passed 209 tests with 1
+pre-existing opt-in model smoke test skipped and 1 unrelated cross-platform
+path-display assertion failing.
 
 The remaining sections below are the original pre-implementation research and
 plan record.

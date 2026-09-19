@@ -37,7 +37,7 @@ public sealed class TranscriptChapterArtifact
         SourceElements = window.SourceElements;
         SourceSegments = window.SourceSegments;
         SourceMetadata = sourceMetadata;
-        Score = window.Score ?? 0d;
+        Score = window.Score;
     }
 
     public string SchemaVersion { get; }
@@ -62,7 +62,7 @@ public sealed class TranscriptChapterArtifact
 
     public IReadOnlyList<TranscriptChapterSourceMetadata> SourceMetadata { get; }
 
-    public double Score { get; }
+    public double? Score { get; }
 }
 
 /// <summary>
@@ -172,7 +172,14 @@ public sealed class TranscriptChapterArtifactGenerator
                 writer.WriteString("start", TranscriptJsonWriter.FormatTimestamp(chapter.Start));
                 writer.WriteString("end", TranscriptJsonWriter.FormatTimestamp(chapter.End));
                 writer.WriteString("text", chapter.Text);
-                writer.WriteNumber("score", chapter.Score);
+                if (chapter.Score is { } score)
+                {
+                    writer.WriteNumber("score", score);
+                }
+                else
+                {
+                    writer.WriteNull("score");
+                }
 
                 writer.WritePropertyName("sourceSegmentIds");
                 writer.WriteStartArray();

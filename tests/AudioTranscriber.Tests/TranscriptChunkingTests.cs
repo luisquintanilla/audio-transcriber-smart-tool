@@ -424,6 +424,36 @@ public sealed class TranscriptChunkingTests
     }
 
     [Fact]
+    public void Build_LongGap_PartitionsWithinMaximumDuration()
+    {
+        var first = Segment(
+            "before the pause",
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(1),
+            ordinal: 0);
+        var second = Segment(
+            "after the pause",
+            TimeSpan.FromSeconds(12),
+            TimeSpan.FromSeconds(13),
+            ordinal: 1);
+
+        var result = CreateBuilder().Build(
+            CreateDocument(first, second),
+            CreateOptions(
+                minimumDuration: TimeSpan.FromSeconds(1),
+                maximumDuration: TimeSpan.FromSeconds(4)));
+
+        var gaps = result.Windows.Where(window => window.IsGap).ToArray();
+        Assert.Equal(3, gaps.Length);
+        Assert.Equal(TimeSpan.FromSeconds(1), gaps[0].Start);
+        Assert.Equal(TimeSpan.FromSeconds(12), gaps[^1].End);
+        Assert.All(
+            gaps,
+            gap => Assert.True(
+                gap.End - gap.Start <= TimeSpan.FromSeconds(4)));
+    }
+
+    [Fact]
     public void Build_GapAtChunkBoundary_PreservesGapSemantics()
     {
         var first = Segment(
@@ -721,6 +751,26 @@ public sealed class TranscriptChunkingTests
                 CreateOptions(
                     minimumDuration: TimeSpan.FromSeconds(3),
                     maximumDuration: TimeSpan.FromSeconds(2))));
+    }
+
+    [Fact]
+    public void Build_UnsupportedTranscriptSchema_ThrowsFormatException()
+    {
+        var document = CreateDocument(
+            Segment("unsupported schema", TimeSpan.Zero, TimeSpan.FromSeconds(1), 0));
+        document.Sections[0].Metadata[Processing.TranscriptIngestionAdapter.DocumentMetadataKey] =
+            new Processing.TranscriptDocumentMetadata(
+                "2.0",
+                "chunking-fixture.wav",
+                new Processing.TranscriptProvenance(
+                    "fixture-provider",
+                    "fixture-model"));
+
+        var exception = Assert.Throws<Processing.TranscriptFormatException>(
+            () => CreateBuilder().Build(document, CreateOptions()));
+
+        Assert.Equal("unsupported_schema_version", exception.Code);
+        Assert.Equal("$.schemaVersion", exception.JsonPath);
     }
 
     [Fact]

@@ -106,9 +106,10 @@ dotnet test .\AudioTranscriber.sln
 
 The initial scoped and full builds/tests stopped at compilation while the
 production declarations were absent. After implementing the contracts and builder, the focused
-chunking/artifact/ingestion run passed 51 tests. The final Release solution
-build completed with 0 warnings and 0 errors, and the final Release solution
-test run passed 207 tests with 1 pre-existing opt-in model smoke test skipped.
+chunking/artifact/ingestion run passed 54 tests. The final Release solution
+build completed with 0 warnings and 0 errors. The final Release solution test
+run passed 209 tests with 1 pre-existing opt-in model smoke test skipped and 1
+unrelated cross-platform path-display assertion failing.
 
 The initial compile blockers were limited to the production declarations added
 by this PR:
@@ -126,7 +127,7 @@ by this PR:
 - Pseudo-mutation review: the canonical boundary, duration/gap,
   dependency-request, deterministic-output, cosine-similarity, and
   non-vacuous-gap assertions are covered by the focused suite.
-- Assertion-quality review: final review passed. All 51 focused tests have substantive
+- Assertion-quality review: final review passed. All 54 focused tests have substantive
   assertions; no assertion-free or wholly trivial tests remain. Equality,
   structural, exception, negative, collection, and dependency side-effect
   assertions are used where applicable.

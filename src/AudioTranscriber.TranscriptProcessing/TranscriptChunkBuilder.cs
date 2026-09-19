@@ -168,12 +168,12 @@ public sealed class TranscriptChunkBuilder
         if (requestedStart < firstElement.Metadata.Start &&
             requestedEnd > firstElement.Metadata.Start)
         {
-            result.Add(
-                new TranscriptChunkWindow(
-                    input.Document,
-                    requestedStart,
-                    firstElement.Metadata.Start,
-                    []));
+            AddGapWindows(
+                result,
+                input.Document,
+                requestedStart,
+                firstElement.Metadata.Start,
+                options.MaximumDuration);
         }
 
         foreach (var element in input.Elements)
@@ -185,12 +185,12 @@ public sealed class TranscriptChunkBuilder
             {
                 AddRunWindows(result, input, run, options);
                 run.Clear();
-                result.Add(
-                    new TranscriptChunkWindow(
-                        input.Document,
-                        previousElement.Metadata.End,
-                        element.Metadata.Start,
-                        []));
+                AddGapWindows(
+                    result,
+                    input.Document,
+                    previousElement.Metadata.End,
+                    element.Metadata.Start,
+                    options.MaximumDuration);
             }
 
             if (element.Metadata.End <= requestedStart ||
@@ -209,18 +209,41 @@ public sealed class TranscriptChunkBuilder
         if (requestedEnd > lastElement.Metadata.End &&
             requestedStart < lastElement.Metadata.End)
         {
-            result.Add(
-                new TranscriptChunkWindow(
-                    input.Document,
-                    lastElement.Metadata.End,
-                    requestedEnd,
-                    []));
+            AddGapWindows(
+                result,
+                input.Document,
+                lastElement.Metadata.End,
+                requestedEnd,
+                options.MaximumDuration);
         }
 
         return new TranscriptChunkResult(
             input.Document,
             input.Metadata,
             result);
+    }
+
+    private static void AddGapWindows(
+        ICollection<TranscriptChunkWindow> output,
+        IngestionDocument document,
+        TimeSpan start,
+        TimeSpan end,
+        TimeSpan maximumDuration)
+    {
+        var duration = end - start;
+        var windowCount = duration.Ticks / maximumDuration.Ticks +
+            (duration.Ticks % maximumDuration.Ticks == 0 ? 0 : 1);
+        var ticksPerWindow = duration.Ticks / windowCount;
+        var remainder = duration.Ticks % windowCount;
+        var windowStart = start;
+
+        for (long index = 0; index < windowCount; index++)
+        {
+            var windowTicks = ticksPerWindow + (index < remainder ? 1 : 0);
+            var windowEnd = windowStart + TimeSpan.FromTicks(windowTicks);
+            output.Add(new TranscriptChunkWindow(document, windowStart, windowEnd, []));
+            windowStart = windowEnd;
+        }
     }
 
     private static void AddRunWindows(
@@ -293,6 +316,17 @@ public sealed class TranscriptChunkBuilder
     private static TranscriptChunkInput MapDocument(IngestionDocument document)
     {
         var metadata = TranscriptIngestionAdapter.RequireDocumentMetadata(document);
+        if (!string.Equals(
+                metadata.SchemaVersion,
+                TranscriptSchema.CurrentVersion,
+                StringComparison.Ordinal))
+        {
+            throw new TranscriptFormatException(
+                "unsupported_schema_version",
+                "$.schemaVersion",
+                $"Expected '{TranscriptSchema.CurrentVersion}'.");
+        }
+
         var elements = new List<TranscriptChunkSourceElement>();
         foreach (var element in document.EnumerateContent())
         {

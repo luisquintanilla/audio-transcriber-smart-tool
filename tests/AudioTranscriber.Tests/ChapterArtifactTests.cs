@@ -85,6 +85,25 @@ public sealed class ChapterArtifactTests
     }
 
     [Fact]
+    public void Generate_StructuralChunks_PreserveNullScore()
+    {
+        var chunkResult = CreateChunkBuilder().Build(
+            CreateDocument(
+                Segment("unscored chapter", 0, 1, 0, id: "segment-unscored")),
+            CreateOptions());
+
+        var artifacts = new Processing.TranscriptChapterArtifactGenerator()
+            .Generate(chunkResult);
+        var chapter = Assert.Single(artifacts);
+
+        Assert.Null(chapter.Score);
+        Assert.Contains(
+            "\"score\": null",
+            new Processing.TranscriptChapterArtifactGenerator().Serialize(artifacts),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Generate_PreservesChunkOrder()
     {
         var chunkResult = CreateChunkBuilder().Build(
