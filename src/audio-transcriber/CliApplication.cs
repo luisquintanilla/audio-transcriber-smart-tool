@@ -9,10 +9,8 @@ namespace AudioTranscriber.Cli;
 
 public sealed class CliApplication
 {
-    private static readonly StringComparison FilePathComparison =
-        OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
+    private const StringComparison FilePathComparison =
+        StringComparison.OrdinalIgnoreCase;
 
     private readonly ITranscriptionEngine _engine;
     private readonly WavAudioReader _audioReader;
@@ -343,17 +341,22 @@ public sealed class CliApplication
 
     private static string ResolveDirectoryPath(DirectoryInfo directory)
     {
-        if (directory.Parent is null)
+        var components = new Stack<string>();
+        for (var current = directory; current.Parent is not null; current = current.Parent)
         {
-            return directory.FullName;
+            components.Push(current.Name);
         }
 
-        var resolvedDirectory = new DirectoryInfo(
-            Path.Combine(ResolveDirectoryPath(directory.Parent), directory.Name));
-        var target = resolvedDirectory.ResolveLinkTarget(returnFinalTarget: true);
-        return target is null
-            ? resolvedDirectory.FullName
-            : ResolveDirectoryPath((DirectoryInfo)target);
+        var resolvedDirectory = directory.Root;
+        while (components.Count > 0)
+        {
+            var candidate = new DirectoryInfo(
+                Path.Combine(resolvedDirectory.FullName, components.Pop()));
+            resolvedDirectory = candidate.ResolveLinkTarget(returnFinalTarget: true)
+                as DirectoryInfo ?? candidate;
+        }
+
+        return resolvedDirectory.FullName;
     }
 
     private static bool TryParseTranscribeOptions(
