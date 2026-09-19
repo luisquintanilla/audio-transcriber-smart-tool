@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Microsoft.Extensions.DataIn
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioTranscriber.TranscriptIngestion", "src\AudioTranscriber.TranscriptIngestion\AudioTranscriber.TranscriptIngestion.csproj", "{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioTranscriber.Granite", "src\AudioTranscriber.Granite\AudioTranscriber.Granite.csproj", "{72C797C9-91D6-4302-A8FE-D1E93003A9AD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -123,6 +125,18 @@ Global
 		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Release|x64.Build.0 = Release|Any CPU
 		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Release|x86.ActiveCfg = Release|Any CPU
 		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Release|x86.Build.0 = Release|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Debug|x64.Build.0 = Debug|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Debug|x86.Build.0 = Debug|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Release|x64.ActiveCfg = Release|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Release|x64.Build.0 = Release|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Release|x86.ActiveCfg = Release|Any CPU
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -139,5 +153,6 @@ Global
 		{1ACB4313-94FB-49E2-B36D-5DB29B5D0DCC} = {D9C74C1F-9414-D4FA-667D-E5F2BCF45959}
 		{8725A996-2040-4239-9E5D-F2C748C71179} = {D9C74C1F-9414-D4FA-667D-E5F2BCF45959}
 		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{72C797C9-91D6-4302-A8FE-D1E93003A9AD} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

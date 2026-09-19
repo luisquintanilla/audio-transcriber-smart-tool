@@ -1,8 +1,10 @@
+using Microsoft.Extensions.AI;
 using AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.Granite;
 
-public sealed class GraniteEmbeddingProvider : ITranscriptEmbeddingProvider, IDisposable
+public sealed class GraniteEmbeddingProvider :
+    IEmbeddingGenerator<TextContent, Embedding<float>>
 {
     private readonly GraniteModelConfiguration configuration;
     private readonly IGraniteTokenizer tokenizer;
@@ -27,6 +29,12 @@ public sealed class GraniteEmbeddingProvider : ITranscriptEmbeddingProvider, IDi
     }
 
     public TranscriptProvenance Provenance { get; }
+
+    public object? GetService(Type serviceType, object? serviceKey = null)
+    {
+        ArgumentNullException.ThrowIfNull(serviceType);
+        return serviceType.IsInstanceOfType(this) ? this : null;
+    }
 
     public static async Task<GraniteEmbeddingProvider> CreateAsync(
         GraniteModelConfiguration? configuration = null,
@@ -53,15 +61,41 @@ public sealed class GraniteEmbeddingProvider : ITranscriptEmbeddingProvider, IDi
             capabilityProbe);
     }
 
-    public async ValueTask<TranscriptEmbeddingResponse> EmbedAsync(
-        TranscriptEmbeddingRequest request,
+    public async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+        IEnumerable<TextContent> values,
+        EmbeddingGenerationOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(values);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var inputs = values.ToArray();
+        var embeddings = new GeneratedEmbeddings<Embedding<float>>(inputs.Length);
+        foreach (var value in inputs)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            cancellationToken.ThrowIfCancellationRequested();
+            embeddings.Add(
+                await GenerateOneAsync(value.Text, cancellationToken)
+                    .ConfigureAwait(false));
+        }
+
+        return embeddings;
+    }
+
+    private async Task<Embedding<float>> GenerateOneAsync(
+        string text,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new ArgumentException(
+                "Granite embedding text cannot be empty.",
+                nameof(text));
+        }
+
         var input = await tokenizer
-            .TokenizeAsync(request.Text, configuration.MaxTokens, cancellationToken)
+            .TokenizeAsync(text.Trim(), configuration.MaxTokens, cancellationToken)
             .ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -73,7 +107,7 @@ public sealed class GraniteEmbeddingProvider : ITranscriptEmbeddingProvider, IDi
         var vector = GraniteEmbeddingPostProcessor.PoolClsAndNormalize(
             output,
             configuration.EmbeddingDimensions);
-        return new TranscriptEmbeddingResponse(vector);
+        return new Embedding<float>(vector);
     }
 
     public void Dispose()

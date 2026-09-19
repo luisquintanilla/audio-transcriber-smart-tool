@@ -1,3 +1,5 @@
+using System.Numerics.Tensors;
+
 namespace AudioTranscriber.Granite;
 
 public sealed class GraniteTokenizedInput
@@ -141,13 +143,8 @@ public static class GraniteEmbeddingPostProcessor
             vector[dimension] = output.Values[dimension];
         }
 
-        var normSquared = 0d;
-        foreach (var value in vector)
-        {
-            normSquared += value * (double)value;
-        }
-
-        if (normSquared <= double.Epsilon)
+        var norm = TensorPrimitives.Norm(vector);
+        if (!float.IsFinite(norm) || norm <= float.Epsilon)
         {
             throw new GraniteModelAssetException(
                 GraniteDiagnosticCode.InvalidOutput,
@@ -155,12 +152,8 @@ public static class GraniteEmbeddingPostProcessor
                 "Granite inference returned a zero CLS vector that cannot be normalized.");
         }
 
-        var norm = Math.Sqrt(normSquared);
-        for (var dimension = 0; dimension < vector.Length; dimension++)
-        {
-            vector[dimension] = (float)(vector[dimension] / norm);
-        }
-
-        return vector;
+        var normalized = new float[vector.Length];
+        TensorPrimitives.Divide(vector, norm, normalized);
+        return normalized;
     }
 }

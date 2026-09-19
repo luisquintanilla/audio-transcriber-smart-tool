@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 using AudioTranscriber.Granite;
-using AudioTranscriber.TranscriptProcessing;
+using Microsoft.Extensions.AI;
 
 namespace AudioTranscriber.Tests;
 
@@ -111,10 +111,10 @@ public sealed class GraniteRuntimeTests
             new FixedGraniteTokenizer(),
             new FixedGraniteRuntime(CreateOutput()));
 
-        var first = await provider.EmbedAsync(new TranscriptEmbeddingRequest("same input"));
-        var second = await provider.EmbedAsync(new TranscriptEmbeddingRequest("same input"));
+        var first = await provider.GenerateAsync([new TextContent("same input")]);
+        var second = await provider.GenerateAsync([new TextContent("same input")]);
 
-        Assert.Equal(first.Vector, second.Vector);
+        Assert.Equal(first[0].Vector.ToArray(), second[0].Vector.ToArray());
     }
 
     private static GraniteInferenceOutput CreateOutput()

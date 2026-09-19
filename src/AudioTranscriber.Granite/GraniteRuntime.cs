@@ -6,7 +6,7 @@ namespace AudioTranscriber.Granite;
 
 public sealed class GraniteSentencePieceTokenizer : IGraniteTokenizer, IDisposable
 {
-    private readonly SentencePieceTokenizer tokenizer;
+    private readonly Tokenizer tokenizer;
 
     public GraniteSentencePieceTokenizer(string tokenizerPath, int maxTokens = GraniteModelMetadata.MaxTokens)
     {
