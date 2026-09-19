@@ -564,6 +564,89 @@ public sealed class ChapterEvaluationTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void FixtureLoader_RejectsShorthandTimestamps()
+    {
+        var exception = Assert.Throws<InvalidDataException>(
+            () => LoadInlineFixture(
+                new[]
+                {
+                    new
+                    {
+                        id = "seg-1",
+                        ordinal = 0,
+                        start = "0",
+                        end = "5",
+                        text = "one"
+                    }
+                },
+                new[]
+                {
+                    new
+                    {
+                        id = "chapter-1",
+                        label = "One",
+                        start = "0",
+                        end = "5",
+                        sourceSegmentIds = new[] { "seg-1" }
+                    }
+                }));
+
+        Assert.Contains(
+            "must use HH:MM:SS",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Metrics_AcceptContiguousPredictionWithNonConsecutiveOrdinals()
+    {
+        var fixture = LoadInlineFixture(
+            new[]
+            {
+                new
+                {
+                    id = "seg-1",
+                    ordinal = 0,
+                    start = "00:00:00",
+                    end = "00:00:05",
+                    text = "one"
+                },
+                new
+                {
+                    id = "seg-2",
+                    ordinal = 7,
+                    start = "00:00:05",
+                    end = "00:00:10",
+                    text = "two"
+                }
+            },
+            new[]
+            {
+                new
+                {
+                    id = "chapter-1",
+                    label = "One",
+                    start = "00:00:00",
+                    end = "00:00:10",
+                    sourceSegmentIds = new[] { "seg-1", "seg-2" }
+                }
+            });
+        var predictions = new[]
+        {
+            new ChapterEvaluationPrediction(
+                "chapter-1",
+                TimeSpan.Zero,
+                TimeSpan.FromSeconds(10),
+                new[] { "seg-1", "seg-2" })
+        };
+
+        var metrics = ChapterEvaluationMetricCalculator.Evaluate(fixture, predictions);
+
+        Assert.Equal(0, metrics.TimestampSemanticViolationCount);
+        Assert.Equal(0, metrics.SourceSegmentIdMismatchCount);
+    }
+
     private static ChapterEvaluationFixture[] LoadFixtures()
     {
         return new[]

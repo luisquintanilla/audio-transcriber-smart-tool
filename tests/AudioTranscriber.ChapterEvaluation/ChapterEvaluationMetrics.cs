@@ -313,6 +313,9 @@ public static class ChapterEvaluationMetricCalculator
         var segmentById = fixture.Transcript.Segments.ToDictionary(
             segment => segment.Id,
             StringComparer.Ordinal);
+        var segmentPositions = fixture.Transcript.Segments
+            .Select((segment, index) => (segment.Id, index))
+            .ToDictionary(value => value.Id, value => value.index, StringComparer.Ordinal);
         var coveredSegmentIds = new HashSet<string>(StringComparer.Ordinal);
         var timestampSemanticViolationCount = 0;
         foreach (var prediction in predictionValues)
@@ -328,7 +331,7 @@ public static class ChapterEvaluationMetricCalculator
 
             if (!sourceSegments.SequenceEqual(
                     sourceSegments.OrderBy(segment => segment.OriginalOrdinal)) ||
-                !HasContiguousSourceSegments(sourceSegments) ||
+                !HasContiguousSourceSegments(sourceSegments, segmentPositions) ||
                 prediction.Start != sourceSegments[0].Start ||
                 prediction.End != sourceSegments[^1].End)
             {
@@ -420,14 +423,19 @@ public static class ChapterEvaluationMetricCalculator
         return true;
     }
 
+    /// <summary>
+    /// Requires adjacency in transcript order rather than consecutive original
+    /// ordinals, because transcripts only guarantee unique increasing ordinals.
+    /// </summary>
     private static bool HasContiguousSourceSegments(
-        IReadOnlyList<TranscriptSegment> sourceSegments)
+        IReadOnlyList<TranscriptSegment> sourceSegments,
+        IReadOnlyDictionary<string, int> segmentPositions)
     {
         for (var index = 1; index < sourceSegments.Count; index++)
         {
             var previous = sourceSegments[index - 1];
             var current = sourceSegments[index];
-            if (current.OriginalOrdinal - (long)previous.OriginalOrdinal != 1 ||
+            if (segmentPositions[current.Id] - segmentPositions[previous.Id] != 1 ||
                 current.Start != previous.End)
             {
                 return false;

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.ChapterEvaluation;
@@ -274,6 +275,10 @@ public static class ChapterEvaluationFixtureLoader
         AllowTrailingCommas = false
     };
 
+    private static readonly Regex TimestampPattern = new(
+        @"^(\d+):([0-5][0-9]):([0-5][0-9])(?:\.(\d{1,7}))?$",
+        RegexOptions.CultureInvariant);
+
     public static ChapterEvaluationFixture Load(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -349,20 +354,60 @@ public static class ChapterEvaluationFixtureLoader
             schemaVersion);
     }
 
+    /// <summary>
+    /// Fixtures use the same strict <c>HH:MM:SS[.fffffff]</c> timestamp form as
+    /// transcript JSON so that shorthand such as <c>5</c> (five days) or
+    /// <c>1:30</c> (one hour thirty minutes) cannot be read as seconds.
+    /// </summary>
     private static TimeSpan ParseTimestamp(string? value, string fieldName)
     {
         var text = Require(value, fieldName);
-        if (!TimeSpan.TryParse(
-                text,
-                CultureInfo.InvariantCulture,
-                out var timestamp) ||
-            timestamp < TimeSpan.Zero)
+        var match = TimestampPattern.Match(text);
+        if (!match.Success)
         {
             throw new InvalidDataException(
-                $"Fixture field '{fieldName}' must be a non-negative duration.");
+                $"Fixture field '{fieldName}' must use HH:MM:SS[.fffffff].");
         }
 
-        return timestamp;
+        if (!long.TryParse(
+                match.Groups[1].ValueSpan,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var hours))
+        {
+            throw new InvalidDataException(
+                $"Fixture field '{fieldName}' must use HH:MM:SS[.fffffff].");
+        }
+
+        var minutes = int.Parse(
+            match.Groups[2].ValueSpan,
+            NumberStyles.None,
+            CultureInfo.InvariantCulture);
+        var seconds = int.Parse(
+            match.Groups[3].ValueSpan,
+            NumberStyles.None,
+            CultureInfo.InvariantCulture);
+        var fraction = match.Groups[4].Success
+            ? long.Parse(
+                match.Groups[4].Value.PadRight(7, '0'),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture)
+            : 0L;
+
+        try
+        {
+            return TimeSpan.FromTicks(
+                checked(
+                    (hours * TimeSpan.TicksPerHour) +
+                    (minutes * TimeSpan.TicksPerMinute) +
+                    (seconds * TimeSpan.TicksPerSecond) +
+                    fraction));
+        }
+        catch (OverflowException)
+        {
+            throw new InvalidDataException(
+                $"Fixture field '{fieldName}' is outside the supported range.");
+        }
     }
 
     private static string Require(string? value, string fieldName) =>

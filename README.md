@@ -318,7 +318,10 @@ order-preserving earliest-feasible match; for ordered one-dimensional
 boundaries this is maximum-cardinality and does not depend on prediction
 enumeration order. Fixture chapters must reference every transcript segment
 exactly once, in ordinal order, with chapter timestamps matching the first and
-last referenced segment; timing gaps are allowed only between chapters.
+last referenced segment; timing gaps are allowed only between chapters. Fixture
+timestamps use the same strict `HH:MM:SS[.fffffff]` form as transcript JSON, and
+prediction contiguity is checked by transcript position rather than by
+consecutive original ordinals.
 Coverage is the fraction of source-segment duration represented by generated
 chapters (timing gaps are not content); the report also includes duration
 constraint violations, source-ID and timestamp-semantic violations, and
