@@ -68,7 +68,7 @@ public sealed class TranscriptProcessingTests
         Assert.Equal("legacy.wav", document.Source);
         Assert.Equal("legacy-provider", document.Provenance.Provider);
         Assert.Equal("legacy-model", document.Provenance.Model);
-        Assert.Equal("legacy-json", document.Provenance.Source);
+        Assert.Null(document.Provenance.Source);
         Assert.Null(document.Provenance.PackageId);
         Assert.Equal("legacy fragment", document.Segments[0].Text);
         Assert.Equal(TimeSpan.FromMilliseconds(1250), document.Segments[0].End);

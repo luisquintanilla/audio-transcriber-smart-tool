@@ -171,8 +171,7 @@ public sealed class TranscriptJsonReader
             legacy: true);
         var provenance = new TranscriptProvenance(
             provider,
-            model,
-            source: "legacy-json");
+            model);
         return Normalizer.Normalize(CreateDocument(source, provenance, segments, path));
     }
 
