@@ -384,6 +384,34 @@ public sealed class TranscriptChapterEnrichmentArtifactSerializer
         return Encoding.UTF8.GetString(buffer.WrittenSpan) + "\n";
     }
 
+    public async Task WriteAsync(
+        Stream stream,
+        TranscriptChapterEnrichmentDocument document,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        if (!stream.CanWrite)
+        {
+            throw new ArgumentException(
+                "Enrichment output stream must be writable.",
+                nameof(stream));
+        }
+
+        ArgumentNullException.ThrowIfNull(document);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var serialized = Serialize(document);
+        using var writer = new StreamWriter(
+            stream,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            bufferSize: 4096,
+            leaveOpen: true);
+        await writer
+            .WriteAsync(serialized.AsMemory(), cancellationToken)
+            .ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static void WriteProvenance(
         Utf8JsonWriter writer,
         TranscriptProvenance provenance)
@@ -500,6 +528,25 @@ public sealed class TranscriptChapterEnrichmentArtifactSerializer
         writer.WriteEndObject();
     }
 
+    private static void WriteMetadata(
+        Utf8JsonWriter writer,
+        string name,
+        IReadOnlyList<TranscriptChapterSourceMetadata> metadata)
+    {
+        writer.WritePropertyName(name);
+        writer.WriteStartArray();
+        foreach (var entry in metadata)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("sourceSegmentId", entry.SourceSegmentId);
+            writer.WriteString("key", entry.Key);
+            writer.WriteString("value", entry.Value);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    }
+
     private static void WriteOptionalString(
         Utf8JsonWriter writer,
         string name,
@@ -589,7 +636,6 @@ public sealed class TranscriptChapterEnrichmentArtifactFileWriter
             directory,
             $".{Path.GetFileName(destination)}.{Environment.ProcessId}." +
             $"{Guid.NewGuid():N}.partial");
-        var content = Encoding.UTF8.GetBytes(serializer.Serialize(document));
 
         try
         {
@@ -601,8 +647,9 @@ public sealed class TranscriptChapterEnrichmentArtifactFileWriter
                              bufferSize: 4096,
                              options: FileOptions.Asynchronous | FileOptions.SequentialScan))
             {
-                await stream.WriteAsync(content, cancellationToken).ConfigureAwait(false);
-                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await serializer
+                    .WriteAsync(stream, document, cancellationToken)
+                    .ConfigureAwait(false);
                 stream.Flush(true);
             }
 

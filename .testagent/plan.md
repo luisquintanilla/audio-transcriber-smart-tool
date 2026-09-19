@@ -438,5 +438,9 @@ replays the enrichment commit and keeps its provider-neutral boundaries.
 
 ## Validation
 
-- Focused enrichment tests: `dotnet test .\tests\AudioTranscriber.Tests\AudioTranscriber.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~ChapterEnrichment" -v:minimal`.
-- Release solution build/tests, restore, package graph/pack, and diff checks are required before pushing the rebased head.
+- Focused enrichment tests: `dotnet test .\tests\AudioTranscriber.Tests\AudioTranscriber.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~ChapterEnrichment" -v:minimal` — 10 passed.
+- `dotnet restore .\AudioTranscriber.sln --configfile .\NuGet.config --verbosity minimal` passed.
+- Release solution build passed with 0 warnings and 0 errors.
+- Release solution tests passed: 254 core tests plus 15 evaluation tests, 1 pre-existing opt-in Whisper smoke test skipped, 0 failed.
+- `dotnet list .\AudioTranscriber.sln package --include-transitive` passed.
+- Release library and CLI packs succeeded: `AudioTranscriber.0.1.1.nupkg` and `audio-transcriber.0.1.1.nupkg`.
