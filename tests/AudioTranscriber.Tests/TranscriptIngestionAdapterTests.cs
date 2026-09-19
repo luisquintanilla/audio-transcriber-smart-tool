@@ -117,6 +117,68 @@ public sealed class TranscriptIngestionAdapterTests
     }
 
     [Fact]
+    public void Map_preserves_absent_provenance_source_and_detaches_read_only_metadata()
+    {
+        var document = CreateDocument(
+            "legacy-shaped.wav",
+            [
+                new Processing.TranscriptSegment(
+                    "legacy text",
+                    TimeSpan.FromSeconds(1),
+                    TimeSpan.FromSeconds(2),
+                    originalOrdinal: 3,
+                    sourceMetadata: new Dictionary<string, string>
+                    {
+                        ["channel"] = "left"
+                    })
+            ]);
+
+        var mapped = Processing.TranscriptIngestionAdapter.ToIngestionDocument(document);
+        var section = Assert.Single(mapped.Sections);
+        var documentMetadata = Assert.IsType<Processing.TranscriptDocumentMetadata>(
+            section.Metadata[Processing.TranscriptIngestionAdapter.DocumentMetadataKey]);
+        var paragraph = Assert.IsType<DataIngestion.IngestionDocumentParagraph>(
+            Assert.Single(section.Elements));
+        var segmentMetadata = Assert.IsType<Processing.TranscriptSegmentMetadata>(
+            paragraph.Metadata[Processing.TranscriptIngestionAdapter.SegmentMetadataKey]);
+
+        Assert.Null(documentMetadata.Provenance.Source);
+        Assert.Equal("legacy text", segmentMetadata.Text);
+        Assert.Equal(3, segmentMetadata.OriginalOrdinal);
+        Assert.NotSame(
+            document.Provenance.Metadata,
+            documentMetadata.Provenance.Metadata);
+        Assert.NotSame(
+            document.Segments[0].SourceMetadata,
+            segmentMetadata.SourceMetadata);
+        Assert.Throws<NotSupportedException>(
+            () => ((IDictionary<string, string>)segmentMetadata.SourceMetadata)["new"] = "value");
+        Assert.Throws<NotSupportedException>(
+            () => ((IDictionary<string, string>)documentMetadata.Provenance.Metadata)["new"] = "value");
+    }
+
+    [Fact]
+    public void TranscriptSegmentMetadata_preserves_the_legacy_nine_argument_constructor()
+    {
+        var metadata = new Processing.TranscriptSegmentMetadata(
+            "segment-id",
+            "source-id",
+            4,
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(1),
+            "speaker",
+            0.5,
+            new Dictionary<string, string>
+            {
+                ["channel"] = "left"
+            });
+
+        Assert.Null(metadata.Text);
+        Assert.Equal("segment-id", metadata.Id);
+        Assert.Equal("left", metadata.SourceMetadata["channel"]);
+    }
+
+    [Fact]
     public void Map_preserves_input_document_order()
     {
         var first = CreateDocument("first.wav");
