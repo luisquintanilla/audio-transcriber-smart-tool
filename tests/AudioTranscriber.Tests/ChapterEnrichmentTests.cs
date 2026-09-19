@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Processing = AudioTranscriber.TranscriptProcessing;
 
@@ -619,5 +620,7 @@ internal static class TranscriptChapterArtifactTestExtensions
 {
     public static int ChapterNumber(
         this Processing.TranscriptChapterArtifact chapter) =>
-        int.Parse(chapter.Title["Chapter ".Length..]);
+        int.Parse(
+            chapter.Title["Chapter ".Length..],
+            CultureInfo.InvariantCulture);
 }
