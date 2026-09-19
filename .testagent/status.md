@@ -131,3 +131,21 @@ by this PR:
   assertions are used where applicable.
 - Production behavior is covered by the focused chunking and artifact suite;
   no test-only production substitutes or real model integrations were added.
+
+## Final Granite migration and review fixes
+
+- Granite directly implements
+  `IEmbeddingGenerator<TextContent, Embedding<float>>` and returns ordered
+  `GeneratedEmbeddings<Embedding<float>>`.
+- `Microsoft.ML.Tokenizers.Tokenizer` is used as the model-specific tokenizer
+  abstraction; ONNX `DenseTensor` remains isolated to runtime interop.
+- `TensorPrimitives.Norm` and `TensorPrimitives.Divide` provide L2
+  normalization.
+- The four accepted review regressions remain covered: permission-denied
+  diagnostics, shared cache coordination and overwrite-safe publication,
+  path-redacted exception text, and disposal-safe ONNX session construction.
+- Final Release focused Granite tests passed 26/26; full Release solution tests
+  passed 231 with one pre-existing opt-in Whisper smoke test skipped.
+- Release package smoke passed with no model/tokenizer assets. Granite's only
+  top-level packages are `Microsoft.ML.OnnxRuntime` 1.30.0 and
+  `Microsoft.ML.Tokenizers` 2.0.0; no ML.NET package was added.

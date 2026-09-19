@@ -144,3 +144,17 @@ These are compile blockers, not permission to invent substitute production types
 9. propagated errors
 10. no real model integrations/CLI/manifest/packages/CI/unrelated changes
 11. tests must be additive and report compile blockers caused by missing production types.
+
+## Granite integration after final seam migration
+
+The finalized lower chain exposes the vendored
+`Microsoft.Extensions.AI.Abstractions` contract
+`IEmbeddingGenerator<TextContent, Embedding<float>>` with
+`Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(...)`. The optional
+Granite project implements that contract directly; it does not reference the
+removed custom transcript embedding provider or add ML.NET/DataIngestion
+packages. Granite keeps a narrow `IGraniteTokenizer` and
+`IGraniteInferenceRuntime` seam, uses `Microsoft.ML.Tokenizers.Tokenizer` for
+SentencePiece, and uses ONNX Runtime `DenseTensor<long>` only at the ONNX
+interop boundary. `System.Numerics.Tensors.TensorPrimitives` supplies L2 norm
+and division for normalized vectors.

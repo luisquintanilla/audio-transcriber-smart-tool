@@ -1,5 +1,5 @@
 using AudioTranscriber.Granite;
-using AudioTranscriber.TranscriptProcessing;
+using Microsoft.Extensions.AI;
 
 namespace AudioTranscriber.Tests;
 
@@ -19,10 +19,9 @@ public sealed class GraniteProviderBehaviorTests
         cancellation.Cancel();
 
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => provider.EmbedAsync(
-                    new TranscriptEmbeddingRequest("cancelled"),
-                    cancellation.Token)
-                .AsTask());
+            () => provider.GenerateAsync(
+                [new TextContent("cancelled")],
+                cancellationToken: cancellation.Token));
 
         Assert.Equal(0, tokenizer.Calls);
         Assert.Equal(0, runtime.Calls);
@@ -45,10 +44,9 @@ public sealed class GraniteProviderBehaviorTests
             runtime);
 
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => provider.EmbedAsync(
-                    new TranscriptEmbeddingRequest("cancel during runtime"),
-                    cancellation.Token)
-                .AsTask());
+            () => provider.GenerateAsync(
+                [new TextContent("cancel during runtime")],
+                cancellationToken: cancellation.Token));
     }
 
     [Fact]
@@ -63,9 +61,41 @@ public sealed class GraniteProviderBehaviorTests
                 ValueTask.FromException<GraniteInferenceOutput>(failure)));
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => provider.EmbedAsync(new TranscriptEmbeddingRequest("fails")).AsTask());
+            () => provider.GenerateAsync([new TextContent("fails")]));
 
         Assert.Same(failure, exception);
+    }
+
+    [Fact]
+    public async Task Provider_GeneratesStandardEmbeddingsInInputOrder()
+    {
+        using var temporary = new GraniteTestDirectory();
+        using var provider = new GraniteEmbeddingProvider(
+            new GraniteModelConfiguration(temporary.Path),
+            new FixedGraniteTokenizer(),
+            new CountingGraniteRuntime());
+
+        var generated = await provider.GenerateAsync(
+            [new TextContent("first"), new TextContent("second")]);
+
+        Assert.IsType<GeneratedEmbeddings<Embedding<float>>>(generated);
+        Assert.Equal(2, generated.Count);
+        Assert.All(generated, embedding =>
+            Assert.Equal(GraniteModelMetadata.EmbeddingDimensions, embedding.Dimensions));
+    }
+
+    [Fact]
+    public void Provider_ImplementsStandardEmbeddingGeneratorContract()
+    {
+        using var temporary = new GraniteTestDirectory();
+        using var provider = new GraniteEmbeddingProvider(
+            new GraniteModelConfiguration(temporary.Path),
+            new FixedGraniteTokenizer(),
+            new CountingGraniteRuntime());
+
+        Assert.Same(provider, provider.GetService(
+            typeof(IEmbeddingGenerator<TextContent, Embedding<float>>)));
+        Assert.Null(provider.GetService(typeof(string)));
     }
 
     [Fact]
@@ -79,7 +109,7 @@ public sealed class GraniteProviderBehaviorTests
             new FixedGraniteTokenizer(),
             runtime);
 
-        await provider.EmbedAsync(new TranscriptEmbeddingRequest("offline"));
+        await provider.GenerateAsync([new TextContent("offline")]);
 
         Assert.False(configuration.AllowNetworkDownload);
         Assert.Equal(1, runtime.Calls);

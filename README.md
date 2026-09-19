@@ -191,9 +191,9 @@ package does not repack them as flattened content files.
 ### Optional Granite embeddings
 
 `src/AudioTranscriber.Granite` is a separate optional project/package that
-implements the `ITranscriptEmbeddingProvider` seam without adding Granite,
-ONNX Runtime, or tokenizer dependencies to the core `AudioTranscriber`
-package. It is pinned to IBM's
+implements the standard `IEmbeddingGenerator<TextContent, Embedding<float>>`
+contract without adding Granite, ONNX Runtime, or tokenizer dependencies to
+the core `AudioTranscriber` package. It is pinned to IBM's
 `ibm-granite/granite-embedding-278m-multilingual` model at revision
 `a9cb5338491faf32b73dd17b714a31821c021bbf`, using the verified `model.onnx`
 and `sentencepiece.bpe.model` assets. The provider uses CLS pooling,

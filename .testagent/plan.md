@@ -399,3 +399,11 @@ real embedding/model integrations, CLI behavior, package and manifest
 authoring, CI configuration, unrelated source trees, and duplicate tests for
 the substantially covered `TranscriptContracts.cs` and
 `TranscriptIngestionAdapter.cs` behavior.
+
+## Granite integration after final seam migration
+
+The optional Granite provider now implements the finalized
+`IEmbeddingGenerator<TextContent, Embedding<float>>` contract and returns
+ordered `GeneratedEmbeddings<Embedding<float>>`. The focused suite verifies
+batch order, standard service discovery, cancellation, deterministic fakes,
+and failure propagation while retaining the four cache/runtime regressions.
