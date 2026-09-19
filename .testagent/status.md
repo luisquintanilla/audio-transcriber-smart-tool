@@ -9,7 +9,7 @@ contracts implemented by this PR:
 | Requirement | Evidence |
 |---|---|
 | Standard TextContent embedding abstraction, cosine primitive, and domain-specific chunk scoring | `EmbeddingFake_ImplementsMicrosoftExtensionsAiContract`; `BuildAsync_UsesStandardEmbeddingVectorsForCosineSimilarity`; `ScoringFake_ImplementsTheNarrowChunkScoringContract`; `ChunkingDependencies_AcceptCancellation` |
-| Canonical DataIngestion conversion and transcript-aware windows | `Build_ConsumesCanonicalDataIngestionElementsAndTypedMetadata`; `Build_SingleSegment_PreservesSourceIdAndMetadata`; `Build_MultipleSegments_PreservesAllSourceIdsAndMetadata`; `Generate_PreservesSourceIdsAndMetadata` |
+| Canonical DataIngestion conversion and transcript-aware windows | `Build_ConsumesCanonicalDataIngestionElementsAndTypedMetadata`; `Build_RequestedRangeBeyondTranscript_EmitsSnappedLeadingAndTrailingGaps`; `Build_SingleSegment_PreservesSourceIdAndMetadata`; `Build_MultipleSegments_PreservesAllSourceIdsAndMetadata`; `Generate_PreservesSourceIdsAndMetadata` |
 | Snapped segment boundaries | `Build_SnapsStartToSourceSegmentBoundary`; `Build_SnapsEndToSourceSegmentBoundary`; `Build_SnapsInternalStartToSourceSegmentBoundary`; `Build_SnapsInternalEndToSourceSegmentBoundary` |
 | Explicit gaps and empty input | `Build_EmptyTranscript_ReturnsEmptyResult`; `Build_GapBetweenSegments_EmitsExplicitGap`; `Build_GapAtChunkBoundary_PreservesGapSemantics`; `Generate_EmptyChunkResult_ProducesDeterministicEmptyArtifact` |
 | Minimum/maximum duration behavior | `Build_RespectsMinimumDuration`; `Build_MinimumDuration_MergesContiguousSegmentsWithinMaximum`; `Build_MinimumDuration_RebalancesBoundaryToAvoidShortTail`; `Build_MinimumDuration_WhenGapPreventsExpansion_UsesExplicitGap`; `Build_RespectsMaximumDuration`; `Build_InvalidDurationOptions_ThrowsDocumentedArgumentException` |
@@ -42,10 +42,11 @@ documented broad exception behavior without inventing members or messages.
 - `Constructor_PreservesDocumentedDiagnosticDetails`
 - `ReaderFailure_ExposesStableFormatDiagnostics`
 
-### `tests/AudioTranscriber.Tests/TranscriptChunkingTests.cs` (17)
+### `tests/AudioTranscriber.Tests/TranscriptChunkingTests.cs` (18)
 
 - `Build_EmptyTranscript_ReturnsEmptyResult`
 - `Build_ConsumesCanonicalDataIngestionElementsAndTypedMetadata`
+- `Build_RequestedRangeBeyondTranscript_EmitsSnappedLeadingAndTrailingGaps`
 - `Build_SingleSegment_PreservesSourceIdAndMetadata`
 - `Build_MultipleSegments_PreservesAllSourceIdsAndMetadata`
 - `Build_SnapsStartToSourceSegmentBoundary`
@@ -105,9 +106,9 @@ dotnet test .\AudioTranscriber.sln
 
 The initial scoped and full builds/tests stopped at compilation while the
 production declarations were absent. After implementing the contracts and builder, the focused
-chunking/artifact/ingestion run passed 50 tests. The final Release solution
+chunking/artifact/ingestion run passed 51 tests. The final Release solution
 build completed with 0 warnings and 0 errors, and the final Release solution
-test run passed 206 tests with 1 pre-existing opt-in model smoke test skipped.
+test run passed 207 tests with 1 pre-existing opt-in model smoke test skipped.
 
 The initial compile blockers were limited to the production declarations added
 by this PR:
@@ -125,7 +126,7 @@ by this PR:
 - Pseudo-mutation review: the canonical boundary, duration/gap,
   dependency-request, deterministic-output, cosine-similarity, and
   non-vacuous-gap assertions are covered by the focused suite.
-- Assertion-quality review: final review passed. All 50 focused tests have substantive
+- Assertion-quality review: final review passed. All 51 focused tests have substantive
   assertions; no assertion-free or wholly trivial tests remain. Equality,
   structural, exception, negative, collection, and dependency side-effect
   assertions are used where applicable.

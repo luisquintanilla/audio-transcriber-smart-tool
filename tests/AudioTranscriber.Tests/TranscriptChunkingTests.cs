@@ -64,6 +64,61 @@ public sealed class TranscriptChunkingTests
     }
 
     [Fact]
+    public void Build_RequestedRangeBeyondTranscript_EmitsSnappedLeadingAndTrailingGaps()
+    {
+        var segment = Segment(
+            "middle transcript",
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(3),
+            ordinal: 0,
+            id: "segment-middle",
+            sourceId: "source-middle",
+            metadata: new Dictionary<string, string>
+            {
+                ["channel"] = "center"
+            });
+
+        var result = CreateBuilder().Build(
+            CreateDocument(segment),
+            CreateOptions(
+                minimumDuration: TimeSpan.FromSeconds(1),
+                maximumDuration: TimeSpan.FromSeconds(5),
+                requestedStart: TimeSpan.Zero,
+                requestedEnd: TimeSpan.FromSeconds(4)));
+
+        Assert.Collection(
+            result.Windows,
+            leadingGap =>
+            {
+                Assert.True(leadingGap.IsGap);
+                Assert.Equal(TimeSpan.Zero, leadingGap.Start);
+                Assert.Equal(TimeSpan.FromSeconds(2), leadingGap.End);
+                Assert.Empty(leadingGap.SourceSegmentIds);
+                Assert.Empty(leadingGap.SourceSegments);
+            },
+            content =>
+            {
+                Assert.False(content.IsGap);
+                Assert.Equal(TimeSpan.FromSeconds(2), content.Start);
+                Assert.Equal(TimeSpan.FromSeconds(3), content.End);
+                Assert.Equal(["segment-middle"], content.SourceSegmentIds);
+                Assert.Equal("source-middle", Assert.Single(content.SourceIds));
+                Assert.Equal(
+                    "center",
+                    Assert.Single(content.SourceSegments)
+                        .SourceMetadata["channel"]);
+            },
+            trailingGap =>
+            {
+                Assert.True(trailingGap.IsGap);
+                Assert.Equal(TimeSpan.FromSeconds(3), trailingGap.Start);
+                Assert.Equal(TimeSpan.FromSeconds(4), trailingGap.End);
+                Assert.Empty(trailingGap.SourceSegmentIds);
+                Assert.Empty(trailingGap.SourceSegments);
+            });
+    }
+
+    [Fact]
     public void Build_SingleSegment_PreservesSourceIdAndMetadata()
     {
         var segment = Segment(

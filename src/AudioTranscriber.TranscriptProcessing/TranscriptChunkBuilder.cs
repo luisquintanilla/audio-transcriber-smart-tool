@@ -162,6 +162,19 @@ public sealed class TranscriptChunkBuilder
         var result = new List<TranscriptChunkWindow>();
         var run = new List<TranscriptChunkSourceElement>();
         TranscriptChunkSourceElement? previousElement = null;
+        var firstElement = input.Elements[0];
+        var lastElement = input.Elements[^1];
+
+        if (requestedStart < firstElement.Metadata.Start &&
+            requestedEnd > firstElement.Metadata.Start)
+        {
+            result.Add(
+                new TranscriptChunkWindow(
+                    input.Document,
+                    requestedStart,
+                    firstElement.Metadata.Start,
+                    []));
+        }
 
         foreach (var element in input.Elements)
         {
@@ -192,6 +205,17 @@ public sealed class TranscriptChunkBuilder
         }
 
         AddRunWindows(result, input, run, options);
+
+        if (requestedEnd > lastElement.Metadata.End &&
+            requestedStart < lastElement.Metadata.End)
+        {
+            result.Add(
+                new TranscriptChunkWindow(
+                    input.Document,
+                    lastElement.Metadata.End,
+                    requestedEnd,
+                    []));
+        }
 
         return new TranscriptChunkResult(
             input.Document,
