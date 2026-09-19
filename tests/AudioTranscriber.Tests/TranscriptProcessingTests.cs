@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Processing = AudioTranscriber.TranscriptProcessing;
+using DataIngestion = Microsoft.Extensions.DataIngestion;
 
 namespace AudioTranscriber.Tests;
 
@@ -603,6 +604,139 @@ public sealed class TranscriptProcessingTests
                 TimeSpan.FromSeconds(1),
                 0,
                 confidence: 1.1));
+    }
+
+    [Fact]
+    public void Ingestion_adapter_uses_standard_elements_and_round_trips_transcript_metadata()
+    {
+        var document = new Processing.TranscriptDocument(
+            "adapter.wav",
+            new Processing.TranscriptProvenance(
+                "provider",
+                "model",
+                source: "source-adapter",
+                metadata: new Dictionary<string, string> { ["run"] = "42" }),
+            [
+                new Processing.TranscriptSegment(
+                    "second",
+                    TimeSpan.FromSeconds(1),
+                    TimeSpan.FromSeconds(2),
+                    8,
+                    sourceId: "source-8",
+                    id: "segment-8",
+                    speaker: "speaker-b",
+                    confidence: 0.8,
+                    sourceMetadata: new Dictionary<string, string> { ["channel"] = "right" }),
+                new Processing.TranscriptSegment(
+                    "first",
+                    TimeSpan.Zero,
+                    TimeSpan.FromSeconds(1),
+                    3,
+                    sourceId: "source-3",
+                    id: "segment-3",
+                    speaker: "speaker-a",
+                    confidence: 0.3,
+                    sourceMetadata: new Dictionary<string, string> { ["channel"] = "left" })
+            ]);
+
+        var ingestion = Processing.TranscriptIngestionAdapter.ToIngestionDocument(
+            document,
+            "adapter-identifier");
+        var section = Assert.Single(ingestion.Sections);
+        var paragraphs = section.Elements.Cast<DataIngestion.IngestionDocumentParagraph>().ToArray();
+        var documentMetadata = Assert.IsType<Processing.TranscriptDocumentMetadata>(
+            section.Metadata[Processing.TranscriptIngestionAdapter.DocumentMetadataKey]);
+
+        Assert.IsType<DataIngestion.IngestionDocument>(ingestion);
+        Assert.Equal("adapter-identifier", ingestion.Identifier);
+        Assert.Equal(["first", "second"], paragraphs.Select(paragraph => paragraph.Text));
+        Assert.Equal(document.Source, documentMetadata.Source);
+        Assert.Equal(document.Provenance.Metadata, documentMetadata.Provenance.Metadata);
+
+        var firstMetadata = Assert.IsType<Processing.TranscriptSegmentMetadata>(
+            paragraphs[0].Metadata[Processing.TranscriptIngestionAdapter.SegmentMetadataKey]);
+        Assert.Equal(document.Segments[0].Start, firstMetadata.Start);
+        Assert.Equal(document.Segments[0].End, firstMetadata.End);
+        Assert.Equal(document.Segments[0].SourceId, firstMetadata.SourceId);
+        Assert.Equal(document.Segments[0].Speaker, firstMetadata.Speaker);
+        Assert.Equal(document.Segments[0].Confidence, firstMetadata.Confidence);
+        Assert.Equal(document.Segments[0].SourceMetadata, firstMetadata.SourceMetadata);
+
+        var roundTrip = Processing.TranscriptIngestionAdapter.ToTranscriptDocument(ingestion);
+        Assert.Equal(document.Source, roundTrip.Source);
+        Assert.Equal(document.Provenance, roundTrip.Provenance);
+        Assert.Equal(
+            document.Segments.Select(segment => segment.Id),
+            roundTrip.Segments.Select(segment => segment.Id));
+        Assert.Equal(
+            document.Segments.Select(segment => (segment.Start, segment.End, segment.Speaker, segment.Confidence)),
+            roundTrip.Segments.Select(segment => (segment.Start, segment.End, segment.Speaker, segment.Confidence)));
+        Assert.Equal(
+            document.Segments.Select(segment => segment.SourceMetadata),
+            roundTrip.Segments.Select(segment => segment.SourceMetadata));
+    }
+
+    [Fact]
+    public async Task Ingestion_reader_preserves_source_and_uses_requested_identifier()
+    {
+        const string json = """
+            {
+              "schemaVersion": "1.0",
+              "source": "original-source.wav",
+              "provenance": { "provider": "p", "model": "m" },
+              "segments": [
+                {
+                  "sourceId": "asr-1",
+                  "start": "00:00:00.000",
+                  "end": "00:00:01.000",
+                  "text": "text"
+                }
+              ]
+            }
+            """;
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+        var ingestion = await new Processing.TranscriptIngestionDocumentReader().ReadAsync(
+            stream,
+            "stable-document-id",
+            "application/json");
+        var roundTrip = Processing.TranscriptIngestionAdapter.ToTranscriptDocument(ingestion);
+
+        Assert.Equal("stable-document-id", ingestion.Identifier);
+        Assert.Equal("original-source.wav", roundTrip.Source);
+        Assert.Equal("asr-1", roundTrip.Segments[0].SourceId);
+    }
+
+    [Fact]
+    public async Task Ingestion_reader_honors_cancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("{}"));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => new Processing.TranscriptIngestionDocumentReader().ReadAsync(
+                stream,
+                "cancelled",
+                "application/json",
+                cancellation.Token));
+    }
+
+    [Fact]
+    public void Ingestion_adapter_rejects_documents_without_typed_metadata()
+    {
+        var ingestion = new DataIngestion.IngestionDocument("missing-metadata");
+        ingestion.Sections.Add(
+            new DataIngestion.IngestionDocumentSection
+            {
+                Elements = { new DataIngestion.IngestionDocumentParagraph("text") }
+            });
+
+        var exception = Assert.Throws<Processing.TranscriptFormatException>(
+            () => Processing.TranscriptIngestionAdapter.ToTranscriptDocument(ingestion));
+
+        Assert.Equal("invalid_ingestion_document", exception.Code);
+        Assert.Contains("missing typed transcript metadata", exception.Message);
     }
 
     private static string Fixture(string name) =>

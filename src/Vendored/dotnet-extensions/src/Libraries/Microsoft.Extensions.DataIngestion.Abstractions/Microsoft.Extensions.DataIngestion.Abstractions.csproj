@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Microsoft.Extensions.DataIngestion</RootNamespace>
+    <Description>Abstractions representing Data Ingestion components for RAG.</Description>
+    <Workstream>RAG</Workstream>
+    <PackageTags>RAG;ingestion;documents</PackageTags>
+    <ForceLatestDotnetVersions>true</ForceLatestDotnetVersions>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Stage>preview</Stage>
+    <EnablePackageValidation>false</EnablePackageValidation>
+    <MinCodeCoverage>75</MinCodeCoverage>
+    <MinMutationScore>75</MinMutationScore>
+    <!--  Convert abstract class into interface -->
+    <NoWarn>$(NoWarn);S1694;S2368</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <InjectMediaTypeMapOnLegacy>true</InjectMediaTypeMapOnLegacy>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Microsoft.Extensions.AI.Abstractions\Microsoft.Extensions.AI.Abstractions.csproj" />
+    <Compile Include="..\..\Shared\**\*.cs" LinkBase="Shared" />
+    <Compile Include="..\..\LegacySupport\MediaTypeMap\MediaTypeMap.cs" Link="Shared\MediaTypeMap.cs" />
+  </ItemGroup>
+
+</Project>
