@@ -77,6 +77,30 @@ public sealed class ChapterEvaluationTests
     }
 
     [Fact]
+    public async Task Harness_ReportUsesLineFeedsOnEveryOperatingSystem()
+    {
+        var report = await new ChapterEvaluationHarness()
+            .EvaluateAsync(
+                LoadFixtures(),
+                new ChapterEvaluationOptions
+                {
+                    MaximumChapterDuration = TimeSpan.FromSeconds(10),
+                    Thresholds = new ChapterEvaluationThresholds
+                    {
+                        MinimumBoundaryF1 = 1d
+                    }
+                });
+
+        var text = report.ToText();
+        var json = report.ToJson();
+
+        Assert.False(report.Passed);
+        Assert.DoesNotContain("\r", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("\r", json, StringComparison.Ordinal);
+        Assert.EndsWith("\n", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Harness_RejectsDuplicateFixtureIds()
     {
         var fixture = LoadFixture("product-launch.json");

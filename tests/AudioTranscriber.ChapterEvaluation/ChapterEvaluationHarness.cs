@@ -109,6 +109,9 @@ public sealed class ChapterEvaluationHarness
     /// Digests the provider-derived window scores and semantic similarities.
     /// Segmentation itself is structural, so this digest is the only part of
     /// the report that changes when an embedding or scoring provider changes.
+    /// Signals are quantized to six decimal places because cosine similarity is
+    /// computed with hardware-dispatched vectorized reductions whose last unit
+    /// in the last place can differ between machines.
     /// </summary>
     private static string CreateProviderSignalDigest(TranscriptChunkResult result)
     {
@@ -116,23 +119,18 @@ public sealed class ChapterEvaluationHarness
         foreach (var window in result.Windows.Where(window => !window.IsGap))
         {
             builder.Append(window.Id).Append('\u001f');
-            builder
-                .Append(
-                    window.Score?.ToString("R", CultureInfo.InvariantCulture)
-                    ?? "null")
-                .Append('\u001f');
-            builder
-                .Append(
-                    window.SemanticSimilarity?.ToString(
-                        "R",
-                        CultureInfo.InvariantCulture)
-                    ?? "null")
-                .Append('\u001e');
+            builder.Append(Signal(window.Score)).Append('\u001f');
+            builder.Append(Signal(window.SemanticSimilarity)).Append('\u001e');
         }
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
     }
+
+    private static string Signal(double? value) =>
+        value is null
+            ? "null"
+            : value.Value.ToString("F6", CultureInfo.InvariantCulture);
 
     private static IReadOnlyList<string> CreateFailures(
         string fixtureId,
@@ -275,6 +273,12 @@ public sealed class ChapterEvaluationReport
 
     public bool Passed => Cases.All(result => result.Passed);
 
+    /// <summary>
+    /// Reports always use line feeds so text and JSON forms are byte-identical
+    /// on every operating system.
+    /// </summary>
+    public const string LineEnding = "\n";
+
     public string ToJson()
     {
         return JsonSerializer.Serialize(
@@ -282,26 +286,30 @@ public sealed class ChapterEvaluationReport
             new JsonSerializerOptions
             {
                 WriteIndented = true,
+                NewLine = LineEnding,
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 Converters = { new JsonStringEnumConverter() }
-            }) + Environment.NewLine;
+            }) + LineEnding;
     }
 
     public string ToText()
     {
         var builder = new StringBuilder();
-        builder.AppendLine($"Chapter evaluation report v{SchemaVersion}");
-        builder.AppendLine($"Status: {(Passed ? "PASS" : "FAIL")}");
-        builder.AppendLine(
+        AppendLine(builder, $"Chapter evaluation report v{SchemaVersion}");
+        AppendLine(builder, $"Status: {(Passed ? "PASS" : "FAIL")}");
+        AppendLine(
+            builder,
             $"Boundary tolerance: {BoundaryTolerance.ToString("c", CultureInfo.InvariantCulture)}");
-        builder.AppendLine(
+        AppendLine(
+            builder,
             "Fixture | Boundary P/R/F1 | Coverage | WindowDiff | " +
             "Duration violations | Source ID mismatches | Timestamp violations | " +
             "Provider signal");
         foreach (var result in Cases)
         {
             var metrics = result.Metrics;
-            builder.AppendLine(
+            AppendLine(
+                builder,
                 string.Join(
                     " | ",
                     result.FixtureId,
@@ -318,15 +326,18 @@ public sealed class ChapterEvaluationReport
 
         if (!Passed)
         {
-            builder.AppendLine("Failures:");
+            AppendLine(builder, "Failures:");
             foreach (var failure in Failures)
             {
-                builder.AppendLine($"- {failure}");
+                AppendLine(builder, $"- {failure}");
             }
         }
 
         return builder.ToString();
     }
+
+    private static void AppendLine(StringBuilder builder, string value) =>
+        builder.Append(value).Append(LineEnding);
 
     private static string Ratio(double value) =>
         ChapterEvaluationFormatting.Ratio(value);

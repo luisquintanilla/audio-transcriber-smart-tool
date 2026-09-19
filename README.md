@@ -328,10 +328,12 @@ constraint violations, source-ID and timestamp-semantic violations, and
 WindowDiff over source-segment windows. Chapter boundaries themselves are
 produced structurally, so each case also reports a provider signal digest over
 the embedding and scoring outputs; substituting a provider changes that digest
-even when the boundaries are unchanged. Fixture IDs must be unique within a run,
-and all report numbers are formatted with the invariant culture. Reports have
-stable text and JSON forms and deterministic thresholds suitable for a later
-CI/release gate. Run the focused suite with:
+even when the boundaries are unchanged. Signals are quantized to six decimal
+places so the digest does not depend on vectorized floating-point reduction
+order. Fixture IDs must be unique within a run, all report numbers are formatted
+with the invariant culture, and both report forms use line feeds regardless of
+operating system. Reports have stable text and JSON forms and deterministic
+thresholds suitable for a later CI/release gate. Run the focused suite with:
 
 ```powershell
 dotnet test .\tests\AudioTranscriber.ChapterEvaluation.Tests\AudioTranscriber.ChapterEvaluation.Tests.csproj --no-restore -v:minimal
