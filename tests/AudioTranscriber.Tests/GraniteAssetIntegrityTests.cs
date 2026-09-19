@@ -112,6 +112,9 @@ public sealed class GraniteAssetIntegrityTests
         Assert.Equal(GraniteDiagnosticCode.IncompatibleAsset, exception.DiagnosticCode);
         Assert.Equal(GraniteAssetKind.Tokenizer, exception.AssetKind);
         Assert.Contains("SentencePiece", exception.Message);
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new GraniteSentencePieceTokenizer(path, maxTokens: 1));
     }
 
     [Fact]

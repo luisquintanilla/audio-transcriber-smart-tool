@@ -21,6 +21,13 @@ public sealed class GraniteSentencePieceTokenizer : IGraniteTokenizer, IDisposab
         Func<string, Stream>? openStream)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tokenizerPath);
+        if (maxTokens < 2)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maxTokens),
+                "At least two tokens are required to preserve BOS and EOS.");
+        }
+
         try
         {
             using var stream = (openStream ?? File.OpenRead)(tokenizerPath);
@@ -54,11 +61,6 @@ public sealed class GraniteSentencePieceTokenizer : IGraniteTokenizer, IDisposab
                 GraniteDiagnosticCode.IncompatibleAsset,
                 GraniteAssetKind.Tokenizer,
                 "The pinned Granite tokenizer asset is incompatible with SentencePiece.");
-        }
-
-        if (maxTokens <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxTokens));
         }
 
         MaxTokens = maxTokens;

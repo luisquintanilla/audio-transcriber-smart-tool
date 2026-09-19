@@ -72,8 +72,8 @@ public sealed class GraniteProviderBehaviorTests
         using var temporary = new GraniteTestDirectory();
         using var provider = new GraniteEmbeddingProvider(
             new GraniteModelConfiguration(temporary.Path),
-            new FixedGraniteTokenizer(),
-            new CountingGraniteRuntime());
+            new TextAwareGraniteTokenizer(),
+            new TextAwareGraniteRuntime());
 
         var generated = await provider.GenerateAsync(
             [new TextContent("first"), new TextContent("second")]);
@@ -82,6 +82,10 @@ public sealed class GraniteProviderBehaviorTests
         Assert.Equal(2, generated.Count);
         Assert.All(generated, embedding =>
             Assert.Equal(GraniteModelMetadata.EmbeddingDimensions, embedding.Dimensions));
+        Assert.Equal(1f, generated[0].Vector.Span[0]);
+        Assert.Equal(1f, generated[1].Vector.Span[1]);
+        Assert.Equal(0f, generated[0].Vector.Span[1]);
+        Assert.Equal(0f, generated[1].Vector.Span[0]);
     }
 
     [Fact]
@@ -228,6 +232,38 @@ internal sealed class CountingGraniteRuntime : IGraniteInferenceRuntime
         Calls++;
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(GraniteTestOutputs.Create());
+    }
+
+}
+
+internal sealed class TextAwareGraniteTokenizer : IGraniteTokenizer
+{
+    public ValueTask<GraniteTokenizedInput> TokenizeAsync(
+        string text,
+        int maxTokens,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var id = text == "first" ? 1L : 2L;
+        return ValueTask.FromResult(new GraniteTokenizedInput([id], [1]));
+    }
+}
+
+internal sealed class TextAwareGraniteRuntime : IGraniteInferenceRuntime
+{
+    public ValueTask<GraniteInferenceOutput> InferAsync(
+        GraniteTokenizedInput input,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var values = new float[GraniteModelMetadata.EmbeddingDimensions];
+        values[input.InputIds[0] == 1 ? 0 : 1] = 1;
+        return ValueTask.FromResult(
+            new GraniteInferenceOutput(
+                batchSize: 1,
+                sequenceLength: 1,
+                hiddenSize: GraniteModelMetadata.EmbeddingDimensions,
+                values));
     }
 }
 
