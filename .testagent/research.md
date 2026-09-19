@@ -1,3 +1,17 @@
+# Final implementation update
+
+The initial missing-API research below is retained as historical context. The
+implemented boundary now consumes canonical
+`Microsoft.Extensions.DataIngestion.IngestionDocument` sections and
+paragraphs with the documented transcript metadata keys. It uses
+`IEmbeddingGenerator<TextContent, Embedding<float>>` and
+`TensorPrimitives.CosineSimilarity`, while retaining transcript-specific
+timing, provenance, minimum-duration repartitioning, deterministic ordering,
+and chapter metadata. The higher preview2 `SemanticSimilarityChunker` was not
+vendored because its `IngestionChunk` output cannot preserve source element
+identity. Focused boundary/chunk/artifact tests pass 49; Release build and
+full tests are green with 205 passed and 1 existing opt-in model test skipped.
+
 # Test Generation Research
 
 ## Project Overview

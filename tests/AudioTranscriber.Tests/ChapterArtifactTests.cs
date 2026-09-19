@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using DataIngestion = Microsoft.Extensions.DataIngestion;
 using Processing = AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.Tests;
@@ -278,19 +279,20 @@ public sealed class ChapterArtifactTests
             new DeterministicChunkScoringProvider());
     }
 
-    private static Processing.TranscriptDocument CreateDocument(
+    private static DataIngestion.IngestionDocument CreateDocument(
         params Processing.TranscriptSegment[] segments)
     {
-        return new Processing.TranscriptDocument(
-            "chapter-artifact-fixture.wav",
-            new Processing.TranscriptProvenance(
-                "fixture-provider",
-                "fixture-model",
-                metadata: new Dictionary<string, string>
-                {
-                    ["fixture"] = "phase-3"
-                }),
-            segments);
+        return Processing.TranscriptIngestionAdapter.ToIngestionDocument(
+            new Processing.TranscriptDocument(
+                "chapter-artifact-fixture.wav",
+                new Processing.TranscriptProvenance(
+                    "fixture-provider",
+                    "fixture-model",
+                    metadata: new Dictionary<string, string>
+                    {
+                        ["fixture"] = "phase-3"
+                    }),
+                segments));
     }
 
     private static Processing.TranscriptChunkingOptions CreateOptions()
@@ -322,10 +324,10 @@ public sealed class ChapterArtifactTests
     }
 
     private sealed class DeterministicEmbeddingProvider
-        : IEmbeddingGenerator<string, Embedding<float>>
+        : IEmbeddingGenerator<TextContent, Embedding<float>>
     {
         public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
-            IEnumerable<string> values,
+            IEnumerable<TextContent> values,
             EmbeddingGenerationOptions? options = null,
             CancellationToken cancellationToken = default)
         {

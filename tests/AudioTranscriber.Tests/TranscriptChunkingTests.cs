@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using DataIngestion = Microsoft.Extensions.DataIngestion;
 using Processing = AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.Tests;
@@ -15,6 +16,51 @@ public sealed class TranscriptChunkingTests
             CreateOptions());
 
         Assert.Empty(result.Windows);
+    }
+
+    [Fact]
+    public void Build_ConsumesCanonicalDataIngestionElementsAndTypedMetadata()
+    {
+        var segment = Segment(
+            "canonical transcript element",
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(3),
+            ordinal: 7,
+            id: "segment-canonical",
+            sourceId: "asr-canonical",
+            speaker: "speaker-canonical",
+            confidence: 0.87,
+            metadata: new Dictionary<string, string>
+            {
+                ["channel"] = "left"
+            });
+        var document = CreateDocument(segment);
+        var section = Assert.Single(document.Sections);
+        var paragraph = Assert.IsType<DataIngestion.IngestionDocumentParagraph>(
+            Assert.Single(section.Elements));
+
+        Assert.Contains(
+            Processing.TranscriptIngestionAdapter.DocumentMetadataKey,
+            section.Metadata.Keys);
+        Assert.Contains(
+            Processing.TranscriptIngestionAdapter.SegmentMetadataKey,
+            paragraph.Metadata.Keys);
+
+        var result = CreateBuilder().Build(document, CreateOptions());
+        var window = Assert.Single(result.Windows);
+
+        Assert.Same(document, result.Document);
+        Assert.Same(paragraph, Assert.Single(window.SourceElements));
+        var metadata = Assert.Single(window.SourceSegments);
+        Assert.Equal("segment-canonical", metadata.Id);
+        Assert.Equal("asr-canonical", metadata.SourceId);
+        Assert.Equal(7, metadata.OriginalOrdinal);
+        Assert.Equal(TimeSpan.FromSeconds(2), metadata.Start);
+        Assert.Equal(TimeSpan.FromSeconds(3), metadata.End);
+        Assert.Equal("speaker-canonical", metadata.Speaker);
+        Assert.Equal(0.87, metadata.Confidence);
+        Assert.Equal("canonical transcript element", metadata.Text);
+        Assert.Equal("left", metadata.SourceMetadata["channel"]);
     }
 
     [Fact]
@@ -113,7 +159,9 @@ public sealed class TranscriptChunkingTests
             sources.Select(source => source.SourceMetadata["channel"]));
         Assert.Equal(
             ["first fragment", "second fragment", "third fragment"],
-            sources.Select(source => source.Text));
+            result.Windows
+                .SelectMany(window => window.SourceElements)
+                .Select(element => element.Text));
         Assert.Equal(
             ["segment-first", "segment-second", "segment-third"],
             result.Windows.SelectMany(window => window.SourceSegmentIds));
@@ -637,11 +685,11 @@ public sealed class TranscriptChunkingTests
                 ordinal: 0));
 
         var overlap = Assert.Throws<ArgumentException>(
-            () => CreateDocument(
+            () => CreateTranscriptDocument(
                 Segment("first", TimeSpan.Zero, TimeSpan.FromSeconds(2), 0),
                 Segment("overlap", TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3), 1)));
         var nonMonotonic = Assert.Throws<ArgumentException>(
-            () => CreateDocument(
+            () => CreateTranscriptDocument(
                 Segment("late", TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3), 0),
                 Segment("early", TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1.5), 1)));
 
@@ -658,7 +706,14 @@ public sealed class TranscriptChunkingTests
             new DeterministicChunkScoringProvider());
     }
 
-    private static Processing.TranscriptDocument CreateDocument(
+    private static DataIngestion.IngestionDocument CreateDocument(
+        params Processing.TranscriptSegment[] segments)
+    {
+        return Processing.TranscriptIngestionAdapter.ToIngestionDocument(
+            CreateTranscriptDocument(segments));
+    }
+
+    private static Processing.TranscriptDocument CreateTranscriptDocument(
         params Processing.TranscriptSegment[] segments)
     {
         return new Processing.TranscriptDocument(
@@ -712,10 +767,10 @@ public sealed class TranscriptChunkingTests
     }
 
     private sealed class DeterministicEmbeddingProvider
-        : IEmbeddingGenerator<string, Embedding<float>>
+        : IEmbeddingGenerator<TextContent, Embedding<float>>
     {
         public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
-            IEnumerable<string> values,
+            IEnumerable<TextContent> values,
             EmbeddingGenerationOptions? options = null,
             CancellationToken cancellationToken = default)
         {

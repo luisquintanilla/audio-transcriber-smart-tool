@@ -8,8 +8,8 @@ contracts implemented by this PR:
 
 | Requirement | Evidence |
 |---|---|
-| Standard embedding abstraction and domain-specific chunk scoring | `EmbeddingFake_ImplementsMicrosoftExtensionsAiContract`; `ScoringFake_ImplementsTheNarrowChunkScoringContract`; `ChunkingDependencies_AcceptCancellation` |
-| Transcript-aware chunk/window construction preserving source segment IDs and metadata | `Build_SingleSegment_PreservesSourceIdAndMetadata`; `Build_MultipleSegments_PreservesAllSourceIdsAndMetadata`; `Generate_PreservesSourceIdsAndMetadata` |
+| Standard TextContent embedding abstraction, cosine primitive, and domain-specific chunk scoring | `EmbeddingFake_ImplementsMicrosoftExtensionsAiContract`; `BuildAsync_UsesStandardEmbeddingVectorsForCosineSimilarity`; `ScoringFake_ImplementsTheNarrowChunkScoringContract`; `ChunkingDependencies_AcceptCancellation` |
+| Canonical DataIngestion conversion and transcript-aware windows | `Build_ConsumesCanonicalDataIngestionElementsAndTypedMetadata`; `Build_SingleSegment_PreservesSourceIdAndMetadata`; `Build_MultipleSegments_PreservesAllSourceIdsAndMetadata`; `Generate_PreservesSourceIdsAndMetadata` |
 | Snapped segment boundaries | `Build_SnapsStartToSourceSegmentBoundary`; `Build_SnapsEndToSourceSegmentBoundary`; `Build_SnapsInternalStartToSourceSegmentBoundary`; `Build_SnapsInternalEndToSourceSegmentBoundary` |
 | Explicit gaps and empty input | `Build_EmptyTranscript_ReturnsEmptyResult`; `Build_GapBetweenSegments_EmitsExplicitGap`; `Build_GapAtChunkBoundary_PreservesGapSemantics`; `Generate_EmptyChunkResult_ProducesDeterministicEmptyArtifact` |
 | Minimum/maximum duration behavior | `Build_RespectsMinimumDuration`; `Build_MinimumDuration_MergesContiguousSegmentsWithinMaximum`; `Build_MinimumDuration_RebalancesBoundaryToAvoidShortTail`; `Build_MinimumDuration_WhenGapPreventsExpansion_UsesExplicitGap`; `Build_RespectsMaximumDuration`; `Build_InvalidDurationOptions_ThrowsDocumentedArgumentException` |
@@ -17,7 +17,7 @@ contracts implemented by this PR:
 | Deterministic chapter artifacts | `Generate_SameChunkResult_ProducesEquivalentArtifacts`; `Generate_PreservesChunkOrder`; `Serialize_SameArtifacts_ProducesIdenticalOutput`; `Generate_PreservesSourceIdsAndMetadata`; `Generate_PreservesCollidingMetadataKeysWithoutSyntheticKeyCollisions`; `Generate_UsesVersionedArtifactContract` |
 | Cancellation | `BuildAsync_CancellationBeforeWork_ThrowsOperationCanceledException`; `BuildAsync_CancellationDuringEmbedding_StopsAndThrowsOperationCanceledException`; `BuildAsync_CancellationDuringScoring_StopsAndThrowsOperationCanceledException`; `GenerateAsync_CancellationIsPropagated` |
 | Propagated errors | `BuildAsync_PropagatesEmbeddingProviderError`; `BuildAsync_PropagatesChunkScoringError` |
-| No real model integrations, CLI, manifest, packages, CI, or unrelated changes | Five additive test files, three production processing files, three `.testagent` artifacts, and the related README section changed; no model, package, CLI, manifest, or CI integration was added |
+| No real model integrations, CLI, manifest, packages, CI, or unrelated changes | Five additive test files plus one related adapter regression, three production processing files, three `.testagent` artifacts, and the related README section changed; no model/provider/runtime or higher DataIngestion pipeline was added |
 | Report compile blockers from missing production types | Initial compile blockers were removed by the production contracts implemented in this PR |
 
 The chapter-generation API exposes no deterministic mid-generation cancellation
@@ -42,9 +42,10 @@ documented broad exception behavior without inventing members or messages.
 - `Constructor_PreservesDocumentedDiagnosticDetails`
 - `ReaderFailure_ExposesStableFormatDiagnostics`
 
-### `tests/AudioTranscriber.Tests/TranscriptChunkingTests.cs` (16)
+### `tests/AudioTranscriber.Tests/TranscriptChunkingTests.cs` (17)
 
 - `Build_EmptyTranscript_ReturnsEmptyResult`
+- `Build_ConsumesCanonicalDataIngestionElementsAndTypedMetadata`
 - `Build_SingleSegment_PreservesSourceIdAndMetadata`
 - `Build_MultipleSegments_PreservesAllSourceIdsAndMetadata`
 - `Build_SnapsStartToSourceSegmentBoundary`
@@ -61,7 +62,7 @@ documented broad exception behavior without inventing members or messages.
 - `Build_InvalidDurationOptions_ThrowsDocumentedArgumentException`
 - `Build_MalformedTiming_IsRejectedWithDocumentedValidationDetails`
 
-### `tests/AudioTranscriber.Tests/TranscriptChunkingBehaviorTests.cs` (6)
+### `tests/AudioTranscriber.Tests/TranscriptChunkingBehaviorTests.cs` (7)
 
 - `BuildAsync_CancellationBeforeWork_ThrowsOperationCanceledException`
 - `BuildAsync_CancellationDuringEmbedding_StopsAndThrowsOperationCanceledException`
@@ -69,6 +70,7 @@ documented broad exception behavior without inventing members or messages.
 - `BuildAsync_PropagatesEmbeddingProviderError`
 - `BuildAsync_PropagatesChunkScoringError`
 - `BuildAsync_PreservesDeterministicOutputForDeterministicDependencies`
+- `BuildAsync_UsesStandardEmbeddingVectorsForCosineSimilarity`
 
 ### `tests/AudioTranscriber.Tests/ChapterArtifactTests.cs` (8)
 
@@ -80,6 +82,10 @@ documented broad exception behavior without inventing members or messages.
 - `Generate_EmptyChunkResult_ProducesDeterministicEmptyArtifact`
 - `Generate_PreservesSourceIdsAndMetadata`
 - `GenerateAsync_CancellationIsPropagated`
+
+### Existing adapter regression
+
+- `TranscriptIngestionAdapterTests.Map_preserves_absent_provenance_source_and_detaches_read_only_metadata`
 
 ## Validation
 
@@ -98,16 +104,17 @@ dotnet test .\AudioTranscriber.sln
 
 The initial scoped and full builds/tests stopped at compilation while the
 production declarations were absent. After implementing the contracts and
-builder, the focused chunking/artifact run passed 36 tests. The final solution
-build completed with 0 warnings and 0 errors, and the final solution test run
-passed 196 tests with 1 pre-existing opt-in model smoke test skipped.
+builder, the focused chunking/artifact/ingestion run passed 49 tests. The
+final Release solution build completed with 0 warnings and 0 errors, and the
+final Release solution test run passed 205 tests with 1 pre-existing opt-in
+model smoke test skipped.
 
 The initial compile blockers were limited to the production declarations added
 by this PR:
 
 - `TranscriptChunkBuilder`
 - `TranscriptChunkingOptions`
-- `IEmbeddingGenerator<string, Embedding<float>>`
+- `IEmbeddingGenerator<TextContent, Embedding<float>>`
 - `Embedding<float>`
 - `GeneratedEmbeddings<Embedding<float>>`
 - `ITranscriptChunkScoringProvider`
@@ -115,11 +122,10 @@ by this PR:
 
 ## Quality gate
 
-- Pseudo-mutation review: unverified static reasoning because the suite cannot
-  compile until the production API exists. Internal boundary, duration/gap,
-  dependency request, deterministic-output, and non-vacuous gap assertions were
-  strengthened in response to review findings.
-- Assertion-quality review: final review passed. All 36 tests have substantive
+- Pseudo-mutation review: the canonical boundary, duration/gap,
+  dependency-request, deterministic-output, cosine-similarity, and
+  non-vacuous-gap assertions are covered by the focused suite.
+- Assertion-quality review: final review passed. All 38 focused tests have substantive
   assertions; no assertion-free or wholly trivial tests remain. Equality,
   structural, exception, negative, collection, and dependency side-effect
   assertions are used where applicable.

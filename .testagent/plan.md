@@ -1,3 +1,28 @@
+# Final implementation update
+
+The production contracts described by the original plan are now implemented.
+The chunk builder consumes canonical
+`Microsoft.Extensions.DataIngestion.IngestionDocument` values with one ordered
+section and paragraph per transcript segment. Typed document and segment
+metadata use `audioTranscriber.transcript.document` and
+`audioTranscriber.transcript.segment`; the mapping preserves timing,
+provenance, IDs, speakers, confidence, ordinals, and detached read-only
+metadata copies.
+
+The embedding seam is
+`IEmbeddingGenerator<TextContent, Embedding<float>>`, and the builder uses
+`TensorPrimitives.CosineSimilarity` for standard vector similarity. The
+preview2 higher `SemanticSimilarityChunker` was not vendored because its
+`IngestionChunk` output cannot preserve the source element identity required
+for transcript timing and provenance. No provider, model, CLI, manifest, or
+higher DataIngestion pipeline dependency was added. The focused
+chunking/artifact/ingestion run passes 49 tests; the Release solution build has
+0 warnings and 0 errors; the Release solution test run passes 205 tests with 1
+pre-existing opt-in model smoke test skipped.
+
+The remaining sections below are the original pre-implementation research and
+plan record.
+
 # Test Implementation Plan
 
 ## Overview

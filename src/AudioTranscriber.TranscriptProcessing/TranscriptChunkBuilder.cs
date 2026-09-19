@@ -1,13 +1,22 @@
+using System.Numerics.Tensors;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DataIngestion;
 
 namespace AudioTranscriber.TranscriptProcessing;
 
 /// <summary>
-/// Builds deterministic transcript windows without requiring an embedding model.
+/// Builds deterministic transcript windows over canonical DataIngestion elements.
 /// </summary>
+/// <remarks>
+/// The higher DataIngestion semantic chunker cannot be reused here because its
+/// <see cref="IngestionChunk"/> output does not retain the source elements that
+/// carry transcript timing and provenance metadata. This builder keeps that
+/// mapping explicit and uses the standard TextContent embedding and cosine
+/// similarity primitives around the transcript-specific boundary rules.
+/// </remarks>
 public sealed class TranscriptChunkBuilder
 {
-    private readonly IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator;
+    private readonly IEmbeddingGenerator<TextContent, Embedding<float>>? embeddingGenerator;
     private readonly ITranscriptChunkScoringProvider? scoringProvider;
 
     public TranscriptChunkBuilder()
@@ -15,7 +24,7 @@ public sealed class TranscriptChunkBuilder
     }
 
     public TranscriptChunkBuilder(
-        IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
+        IEmbeddingGenerator<TextContent, Embedding<float>> embeddingGenerator,
         ITranscriptChunkScoringProvider scoringProvider)
     {
         this.embeddingGenerator = embeddingGenerator
@@ -28,7 +37,7 @@ public sealed class TranscriptChunkBuilder
     /// Builds structural windows without invoking asynchronous model services.
     /// </summary>
     public TranscriptChunkResult Build(
-        TranscriptDocument document,
+        IngestionDocument document,
         TranscriptChunkingOptions options)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -41,7 +50,7 @@ public sealed class TranscriptChunkBuilder
     /// Builds windows and evaluates each content window through the injected seams.
     /// </summary>
     public async Task<TranscriptChunkResult> BuildAsync(
-        TranscriptDocument document,
+        IngestionDocument document,
         TranscriptChunkingOptions options,
         CancellationToken cancellationToken = default)
     {
@@ -51,12 +60,14 @@ public sealed class TranscriptChunkBuilder
 
         var structural = BuildStructural(document, options);
         var evaluated = new List<TranscriptChunkWindow>(structural.Windows.Count);
+        Embedding<float>? previousEmbedding = null;
 
         foreach (var window in structural.Windows)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (window.IsGap)
             {
+                previousEmbedding = null;
                 evaluated.Add(window);
                 continue;
             }
@@ -70,7 +81,7 @@ public sealed class TranscriptChunkBuilder
 
             var embeddings = await embeddingGenerator
                 .GenerateAsync(
-                    [window.Text],
+                    [new TextContent(window.Text)],
                     cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             if (embeddings.Count != 1)
@@ -84,6 +95,11 @@ public sealed class TranscriptChunkBuilder
                     "Embedding generators must not return null embeddings.");
             cancellationToken.ThrowIfCancellationRequested();
 
+            var semanticSimilarity = previousEmbedding is null
+                ? (double?)null
+                : (double)TensorPrimitives.CosineSimilarity(
+                    previousEmbedding.Vector.Span,
+                    embedding.Vector.Span);
             var score = await scoringProvider
                 .ScoreAsync(
                     new TranscriptChunkScoringRequest(
@@ -100,33 +116,35 @@ public sealed class TranscriptChunkBuilder
                     "Transcript chunk scoring providers must return finite scores.");
             }
 
-            evaluated.Add(window.WithScore(score));
+            previousEmbedding = embedding;
+            evaluated.Add(window.WithScore(score, semanticSimilarity));
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         return new TranscriptChunkResult(
-            structural.Source,
-            structural.Provenance,
+            structural.Document,
+            structural.Metadata,
             evaluated);
     }
 
     private static TranscriptChunkResult BuildStructural(
-        TranscriptDocument document,
+        IngestionDocument document,
         TranscriptChunkingOptions options)
     {
         ValidateOptions(options);
-        ValidateSegments(document.Segments);
+        var input = MapDocument(document);
 
-        if (document.Segments.Count == 0)
+        if (input.Elements.Count == 0)
         {
             return new TranscriptChunkResult(
-                document.Source,
-                document.Provenance,
+                input.Document,
+                input.Metadata,
                 Array.Empty<TranscriptChunkWindow>());
         }
 
-        var requestedStart = options.RequestedStart ?? document.Segments[0].Start;
-        var requestedEnd = options.RequestedEnd ?? document.Segments[^1].End;
+        var requestedStart = options.RequestedStart ?? input.Elements[0].Metadata.Start;
+        var requestedEnd = options.RequestedEnd ??
+            input.Elements[^1].Metadata.End;
         if (requestedStart < TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(
@@ -142,56 +160,49 @@ public sealed class TranscriptChunkBuilder
         }
 
         var result = new List<TranscriptChunkWindow>();
-        var run = new List<TranscriptSegment>();
-        var previousSegment = (TranscriptSegment?)null;
+        var run = new List<TranscriptChunkSourceElement>();
+        TranscriptChunkSourceElement? previousElement = null;
 
-        foreach (var segment in document.Segments)
+        foreach (var element in input.Elements)
         {
-            if (previousSegment is not null &&
-                segment.Start > previousSegment.End &&
-                segment.Start > requestedStart &&
-                previousSegment.End < requestedEnd)
+            if (previousElement is not null &&
+                element.Metadata.Start > previousElement.Metadata.End &&
+                element.Metadata.Start > requestedStart &&
+                previousElement.Metadata.End < requestedEnd)
             {
-                AddRunWindows(result, run, options);
+                AddRunWindows(result, input, run, options);
                 run.Clear();
-                result.Add(new TranscriptChunkWindow(
-                    previousSegment.End,
-                    segment.Start,
-                    []));
+                result.Add(
+                    new TranscriptChunkWindow(
+                        input.Document,
+                        previousElement.Metadata.End,
+                        element.Metadata.Start,
+                        []));
             }
 
-            if (segment.End <= requestedStart || segment.Start >= requestedEnd)
+            if (element.Metadata.End <= requestedStart ||
+                element.Metadata.Start >= requestedEnd)
             {
-                previousSegment = segment;
+                previousElement = element;
                 continue;
             }
 
-            if (run.Count > 0)
-            {
-                var previous = run[^1];
-                if (segment.Start > previous.End)
-                {
-                    AddRunWindows(result, run, options);
-                    result.Add(new TranscriptChunkWindow(previous.End, segment.Start, []));
-                    run.Clear();
-                }
-            }
-
-            run.Add(segment);
-            previousSegment = segment;
+            run.Add(element);
+            previousElement = element;
         }
 
-        AddRunWindows(result, run, options);
+        AddRunWindows(result, input, run, options);
 
         return new TranscriptChunkResult(
-            document.Source,
-            document.Provenance,
+            input.Document,
+            input.Metadata,
             result);
     }
 
     private static void AddRunWindows(
         ICollection<TranscriptChunkWindow> output,
-        IReadOnlyList<TranscriptSegment> run,
+        TranscriptChunkInput input,
+        IReadOnlyList<TranscriptChunkSourceElement> run,
         TranscriptChunkingOptions options)
     {
         if (run.Count == 0)
@@ -211,7 +222,8 @@ public sealed class TranscriptChunkBuilder
 
             for (var end = start; end < run.Count; end++)
             {
-                var candidateDuration = run[end].End - run[start].Start;
+                var candidateDuration =
+                    run[end].Metadata.End - run[start].Metadata.Start;
                 if (end > start && candidateDuration > options.MaximumDuration)
                 {
                     break;
@@ -237,30 +249,76 @@ public sealed class TranscriptChunkBuilder
         foreach (var endIndex in final.Ends)
         {
             output.Add(
-                CreateContentWindow(
+                new TranscriptChunkWindow(
+                    input.Document,
+                    run[startIndex].Metadata.Start,
+                    run[endIndex - 1].Metadata.End,
                     run.Skip(startIndex).Take(endIndex - startIndex).ToArray()));
             startIndex = endIndex;
         }
     }
 
-    private sealed record Partition(
-        int ShortWindowCount,
-        int WindowCount,
-        IReadOnlyList<int> Ends)
+    private static TranscriptChunkInput MapDocument(IngestionDocument document)
     {
-        public bool IsBetterThan(Partition other) =>
-            ShortWindowCount < other.ShortWindowCount ||
-            (ShortWindowCount == other.ShortWindowCount &&
-             WindowCount < other.WindowCount);
+        var metadata = TranscriptIngestionAdapter.RequireDocumentMetadata(document);
+        var elements = new List<TranscriptChunkSourceElement>();
+        foreach (var element in document.EnumerateContent())
+        {
+            if (element is not IngestionDocumentParagraph paragraph)
+            {
+                throw new TranscriptFormatException(
+                    "invalid_ingestion_document",
+                    "$",
+                    "Transcript documents can contain only paragraph elements.");
+            }
+
+            var segmentMetadata =
+                TranscriptIngestionAdapter.RequireSegmentMetadata(paragraph);
+            ValidateSegmentMetadata(segmentMetadata);
+            elements.Add(new TranscriptChunkSourceElement(paragraph, segmentMetadata));
+        }
+
+        for (var index = 1; index < elements.Count; index++)
+        {
+            var previous = elements[index - 1].Metadata;
+            var current = elements[index].Metadata;
+            if (current.OriginalOrdinal <= previous.OriginalOrdinal)
+            {
+                throw new TranscriptFormatException(
+                    "invalid_ingestion_document",
+                    "$",
+                    "Transcript segment ordinals must be strictly increasing.");
+            }
+
+            if (current.Start < previous.Start ||
+                current.Start < previous.End)
+            {
+                throw new TranscriptFormatException(
+                    "invalid_ingestion_document",
+                    "$",
+                    "Transcript segment timings must be monotonic and non-overlapping.");
+            }
+        }
+
+        return new TranscriptChunkInput(document, metadata, elements);
     }
 
-    private static TranscriptChunkWindow CreateContentWindow(
-        IReadOnlyList<TranscriptSegment> segments)
+    private static void ValidateSegmentMetadata(TranscriptSegmentMetadata metadata)
     {
-        return new TranscriptChunkWindow(
-            segments[0].Start,
-            segments[^1].End,
-            segments);
+        if (metadata.OriginalOrdinal < 0 ||
+            metadata.Start < TimeSpan.Zero ||
+            metadata.End <= metadata.Start ||
+            metadata.SourceMetadata is null ||
+            (metadata.Confidence is not null &&
+             (!double.IsFinite(metadata.Confidence.Value) ||
+              metadata.Confidence.Value < 0 ||
+              metadata.Confidence.Value > 1)))
+        {
+            throw new TranscriptFormatException(
+                "invalid_ingestion_document",
+                "$",
+                "Transcript segment metadata contains invalid timing or confidence.");
+        }
     }
 
     private static void ValidateOptions(TranscriptChunkingOptions options)
@@ -287,34 +345,19 @@ public sealed class TranscriptChunkBuilder
         }
     }
 
-    private static void ValidateSegments(IReadOnlyList<TranscriptSegment> segments)
+    private sealed record TranscriptChunkInput(
+        IngestionDocument Document,
+        TranscriptDocumentMetadata Metadata,
+        IReadOnlyList<TranscriptChunkSourceElement> Elements);
+
+    private sealed record Partition(
+        int ShortWindowCount,
+        int WindowCount,
+        IReadOnlyList<int> Ends)
     {
-        for (var index = 0; index < segments.Count; index++)
-        {
-            var segment = segments[index]
-                ?? throw new ArgumentException(
-                    "Transcript segments cannot contain null entries.",
-                    nameof(segments));
-
-            if (segment.Start < TimeSpan.Zero || segment.End <= segment.Start)
-            {
-                throw new ArgumentException(
-                    "Transcript segment timing is malformed.",
-                    nameof(segments));
-            }
-
-            if (index == 0)
-            {
-                continue;
-            }
-
-            var previous = segments[index - 1];
-            if (segment.Start < previous.Start || segment.Start < previous.End)
-            {
-                throw new ArgumentException(
-                    "Transcript segment timings must be monotonic and non-overlapping.",
-                    nameof(segments));
-            }
-        }
+        public bool IsBetterThan(Partition other) =>
+            ShortWindowCount < other.ShortWindowCount ||
+            (ShortWindowCount == other.ShortWindowCount &&
+             WindowCount < other.WindowCount);
     }
 }

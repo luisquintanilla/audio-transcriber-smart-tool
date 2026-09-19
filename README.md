@@ -254,16 +254,25 @@ and fails fast on cancellation before enumerating the source.
 ## Optional transcript chunking and chapter artifacts
 
 `src/AudioTranscriber.TranscriptProcessing` also provides the versioned `1.0`
-chunking and chapter-artifact contracts. `TranscriptChunkBuilder` creates
-deterministic windows aligned to complete source segments, retains source IDs
-and metadata, and represents timing gaps as explicit empty windows. Minimum and
-maximum durations are applied without splitting a source segment. The
-synchronous API is structural and offline; `BuildAsync` optionally evaluates
-content windows through
-`IEmbeddingGenerator<string, Embedding<float>>` from the lightweight
-`Microsoft.Extensions.AI.Abstractions` dependency and the domain-specific
-`ITranscriptChunkScoringProvider` seam, so model runtimes remain outside this
-package.
+chunking and chapter-artifact contracts. `TranscriptChunkBuilder` consumes the
+canonical `Microsoft.Extensions.DataIngestion.IngestionDocument` boundary:
+one ordered section contains one paragraph per transcript segment, and the
+document/paragraph metadata keys are
+`audioTranscriber.transcript.document` and
+`audioTranscriber.transcript.segment`. It retains source elements, typed
+timing/provenance metadata, source IDs, and ordering while representing timing
+gaps as explicit empty windows. Minimum and maximum durations are applied
+without splitting a source segment.
+
+The synchronous API is structural and offline. `BuildAsync` uses
+`IEmbeddingGenerator<TextContent, Embedding<float>>` from the vendored
+Microsoft.Extensions.AI abstraction source and
+`TensorPrimitives.CosineSimilarity` for standard vector similarity, plus the
+domain-specific `ITranscriptChunkScoringProvider` seam. The higher preview2
+`SemanticSimilarityChunker` is intentionally not vendored or wrapped: its
+`IngestionChunk` output collapses element identity and cannot preserve the
+transcript timing/provenance required by this contract. The builder therefore
+keeps only the transcript-specific orchestration around canonical elements.
 
 `TranscriptChapterArtifactGenerator` projects non-gap windows into an ordered,
 versioned `TranscriptChapterArtifactDocument` and provides deterministic JSON

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using DataIngestion = Microsoft.Extensions.DataIngestion;
 using Processing = AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.Tests;
@@ -276,20 +277,50 @@ public sealed class TranscriptChunkingBehaviorTests
         }
     }
 
+    [Fact]
+    public async Task BuildAsync_UsesStandardEmbeddingVectorsForCosineSimilarity()
+    {
+        var embedding = new SequenceEmbeddingProvider();
+        var result = await CreateBuilder(
+                embedding,
+                new ControlledChunkScoringProvider())
+            .BuildAsync(
+                CreateDocument(
+                    Segment("first semantic window", 0, 1, 0),
+                    Segment("second semantic window", 1, 2, 1)),
+                CreateOptions(
+                    minimumDuration: TimeSpan.FromMilliseconds(500),
+                    maximumDuration: TimeSpan.FromSeconds(1)),
+                CancellationToken.None);
+
+        Assert.Equal(
+            ["first semantic window", "second semantic window"],
+            embedding.Requests);
+        Assert.Equal(2, result.Windows.Count);
+        Assert.Null(result.Windows[0].SemanticSimilarity);
+        Assert.Equal(
+            0d,
+            result.Windows[1].SemanticSimilarity!.Value,
+            precision: 6);
+    }
+
     private static Processing.TranscriptChunkBuilder CreateBuilder(
-        ControlledEmbeddingProvider embedding,
+        IEmbeddingGenerator<TextContent, Embedding<float>> embedding,
         ControlledChunkScoringProvider scoring)
     {
         return new Processing.TranscriptChunkBuilder(embedding, scoring);
     }
 
-    private static Processing.TranscriptDocument CreateDocument(
+    private static DataIngestion.IngestionDocument CreateDocument(
         params Processing.TranscriptSegment[] segments)
     {
-        return new Processing.TranscriptDocument(
-            "chunking-behavior-fixture.wav",
-            new Processing.TranscriptProvenance("fixture-provider", "fixture-model"),
-            segments);
+        return Processing.TranscriptIngestionAdapter.ToIngestionDocument(
+            new Processing.TranscriptDocument(
+                "chunking-behavior-fixture.wav",
+                new Processing.TranscriptProvenance(
+                    "fixture-provider",
+                    "fixture-model"),
+                segments));
     }
 
     private static Processing.TranscriptChunkingOptions CreateOptions(
@@ -327,7 +358,7 @@ public sealed class TranscriptChunkingBehaviorTests
     }
 
     private sealed class ControlledEmbeddingProvider
-        : IEmbeddingGenerator<string, Embedding<float>>
+        : IEmbeddingGenerator<TextContent, Embedding<float>>
     {
         public List<string> Requests { get; } = [];
 
@@ -338,12 +369,12 @@ public sealed class TranscriptChunkingBehaviorTests
         public CancellationTokenSource? CancelSourceOnCall { get; init; }
 
         public async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
-            IEnumerable<string> values,
+            IEnumerable<TextContent> values,
             EmbeddingGenerationOptions? options = null,
             CancellationToken cancellationToken = default)
         {
             CallCount++;
-            Requests.Add(Assert.Single(values));
+            Requests.Add(Assert.Single(values).Text);
             CancelSourceOnCall?.Cancel();
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -357,6 +388,35 @@ public sealed class TranscriptChunkingBehaviorTests
             [
                 new Embedding<float>(new float[] { 0.125f, -0.25f, 0.5f })
             ];
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey) =>
+            serviceKey is null && serviceType.IsInstanceOfType(this) ? this : null;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class SequenceEmbeddingProvider
+        : IEmbeddingGenerator<TextContent, Embedding<float>>
+    {
+        public List<string> Requests { get; } = [];
+
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<TextContent> values,
+            EmbeddingGenerationOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(Assert.Single(values).Text);
+            var vector = Requests.Count == 1
+                ? new float[] { 1, 0 }
+                : new float[] { 0, 1 };
+            return Task.FromResult(
+                new GeneratedEmbeddings<Embedding<float>>(
+                [
+                    new Embedding<float>(vector)
+                ]));
         }
 
         public object? GetService(Type serviceType, object? serviceKey) =>

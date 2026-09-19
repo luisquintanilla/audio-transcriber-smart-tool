@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DataIngestion;
 
 namespace AudioTranscriber.TranscriptProcessing;
 
@@ -9,7 +10,7 @@ public sealed record TranscriptChunkScoringRequest
 {
     public TranscriptChunkScoringRequest(
         string text,
-        IEnumerable<TranscriptSegment> segments,
+        IEnumerable<TranscriptSegmentMetadata> segments,
         TimeSpan start,
         TimeSpan end,
         Embedding<float>? embedding = null)
@@ -60,7 +61,7 @@ public sealed record TranscriptChunkScoringRequest
 
     public string Text { get; }
 
-    public IReadOnlyList<TranscriptSegment> Segments { get; }
+    public IReadOnlyList<TranscriptSegmentMetadata> Segments { get; }
 
     public TimeSpan Start { get; }
 
@@ -99,10 +100,12 @@ public sealed record TranscriptChunkingOptions
 public sealed class TranscriptChunkWindow
 {
     internal TranscriptChunkWindow(
+        IngestionDocument document,
         TimeSpan start,
         TimeSpan end,
-        IEnumerable<TranscriptSegment> sourceSegments,
-        double? score = null)
+        IEnumerable<TranscriptChunkSourceElement> sourceElements,
+        double? score = null,
+        double? semanticSimilarity = null)
     {
         if (start < TimeSpan.Zero)
         {
@@ -114,31 +117,41 @@ public sealed class TranscriptChunkWindow
             throw new ArgumentOutOfRangeException(nameof(end));
         }
 
-        ArgumentNullException.ThrowIfNull(sourceSegments);
-        var segments = sourceSegments.ToArray();
-        if (segments.Any(segment => segment is null))
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(sourceElements);
+        var elements = sourceElements.ToArray();
+        if (elements.Any(element => element is null))
         {
             throw new ArgumentException(
-                "Window source segments cannot contain null entries.",
-                nameof(sourceSegments));
+                "Window source elements cannot contain null entries.",
+                nameof(sourceElements));
         }
 
+        Document = document;
         Start = start;
         End = end;
-        SourceSegments = Array.AsReadOnly(segments);
+        SourceElements = Array.AsReadOnly(
+            elements.Select(element => element.Element).ToArray());
+        SourceSegments = Array.AsReadOnly(
+            elements.Select(element => element.Metadata).ToArray());
         SourceSegmentIds = Array.AsReadOnly(
-            segments.Select(segment => segment.Id).ToArray());
+            SourceSegments.Select(segment => segment.Id).ToArray());
         SourceIds = Array.AsReadOnly(
-            segments
+            SourceSegments
                 .Select(segment => segment.SourceId)
                 .Where(sourceId => sourceId is not null)
                 .Cast<string>()
                 .ToArray());
-        Text = string.Join(' ', segments.Select(segment => segment.Text));
+        Text = string.Join(
+            ' ',
+            SourceElements.Select(element => element.Text ?? element.GetMarkdown()));
         Score = score;
-        IsGap = segments.Length == 0;
-        Id = CreateId(start, end, segments);
+        SemanticSimilarity = semanticSimilarity;
+        IsGap = elements.Length == 0;
+        Id = CreateId(start, end, SourceSegments);
     }
+
+    public IngestionDocument Document { get; }
 
     public string Id { get; }
 
@@ -152,26 +165,48 @@ public sealed class TranscriptChunkWindow
 
     public IReadOnlyList<string> SourceIds { get; }
 
-    public IReadOnlyList<TranscriptSegment> SourceSegments { get; }
+    public IReadOnlyList<IngestionDocumentParagraph> SourceElements { get; }
+
+    public IReadOnlyList<TranscriptSegmentMetadata> SourceSegments { get; }
 
     public bool IsGap { get; }
 
     public double? Score { get; }
 
-    internal TranscriptChunkWindow WithScore(double score) =>
-        new(Start, End, SourceSegments, score);
+    public double? SemanticSimilarity { get; }
+
+    internal TranscriptChunkWindow WithScore(
+        double score,
+        double? semanticSimilarity) =>
+        new(
+            Document,
+            Start,
+            End,
+            SourceSegments
+                .Select(
+                    (metadata, index) =>
+                        new TranscriptChunkSourceElement(
+                            SourceElements[index],
+                            metadata)),
+            score,
+            semanticSimilarity);
 
     private static string CreateId(
         TimeSpan start,
         TimeSpan end,
-        IReadOnlyList<TranscriptSegment> segments)
+        IReadOnlyList<TranscriptSegmentMetadata> segments)
     {
         var sourceIds = string.Join(
             "\u001f",
             segments.Select(segment => segment.Id));
         return $"window-{start.Ticks:x}-{end.Ticks:x}-{sourceIds}";
     }
+
 }
+
+internal sealed record TranscriptChunkSourceElement(
+    IngestionDocumentParagraph Element,
+    TranscriptSegmentMetadata Metadata);
 
 /// <summary>
 /// The ordered output of transcript chunk construction.
@@ -179,12 +214,14 @@ public sealed class TranscriptChunkWindow
 public sealed class TranscriptChunkResult
 {
     internal TranscriptChunkResult(
-        string source,
-        TranscriptProvenance provenance,
+        IngestionDocument document,
+        TranscriptDocumentMetadata metadata,
         IEnumerable<TranscriptChunkWindow> windows)
     {
-        Source = source;
-        Provenance = provenance;
+        Document = document;
+        Source = metadata.Source;
+        Provenance = metadata.Provenance;
+        Metadata = metadata;
         Windows = Array.AsReadOnly(windows.ToArray());
     }
 
@@ -193,6 +230,10 @@ public sealed class TranscriptChunkResult
     public string Source { get; }
 
     public TranscriptProvenance Provenance { get; }
+
+    internal TranscriptDocumentMetadata Metadata { get; }
+
+    public IngestionDocument Document { get; }
 
     public IReadOnlyList<TranscriptChunkWindow> Windows { get; }
 }

@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DataIngestion;
 
 namespace AudioTranscriber.TranscriptProcessing;
 
@@ -33,6 +34,7 @@ public sealed class TranscriptChapterArtifact
         End = window.End;
         SourceSegmentIds = window.SourceSegmentIds;
         SourceIds = window.SourceIds;
+        SourceElements = window.SourceElements;
         SourceSegments = window.SourceSegments;
         SourceMetadata = sourceMetadata;
         Score = window.Score ?? 0d;
@@ -54,7 +56,9 @@ public sealed class TranscriptChapterArtifact
 
     public IReadOnlyList<string> SourceIds { get; }
 
-    public IReadOnlyList<TranscriptSegment> SourceSegments { get; }
+    public IReadOnlyList<IngestionDocumentParagraph> SourceElements { get; }
+
+    public IReadOnlyList<TranscriptSegmentMetadata> SourceSegments { get; }
 
     public IReadOnlyList<TranscriptChapterSourceMetadata> SourceMetadata { get; }
 
@@ -202,7 +206,7 @@ public sealed class TranscriptChapterArtifactGenerator
         $"chapter-{index + 1:D4}-{window.Id}";
 
     private static IReadOnlyList<TranscriptChapterSourceMetadata> MergeMetadata(
-        IReadOnlyList<TranscriptSegment> segments)
+        IReadOnlyList<TranscriptSegmentMetadata> segments)
     {
         var values = new List<TranscriptChapterSourceMetadata>();
         foreach (var segment in segments)

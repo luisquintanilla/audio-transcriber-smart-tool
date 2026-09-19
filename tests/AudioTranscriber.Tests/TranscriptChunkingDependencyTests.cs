@@ -9,10 +9,10 @@ public sealed class TranscriptChunkingDependencyTests
     public async Task EmbeddingFake_ImplementsMicrosoftExtensionsAiContract()
     {
         var fake = new DeterministicEmbeddingProvider();
-        IEmbeddingGenerator<string, Embedding<float>> provider = fake;
+        IEmbeddingGenerator<TextContent, Embedding<float>> provider = fake;
 
         var response = await provider.GenerateAsync(
-            ["opening statement"],
+            [new TextContent("opening statement")],
             cancellationToken: CancellationToken.None);
         var embedding = Assert.Single(response);
 
@@ -52,11 +52,11 @@ public sealed class TranscriptChunkingDependencyTests
         var embeddingFake = new DeterministicEmbeddingProvider();
         var scoringFake = new DeterministicChunkScoringProvider();
 
-        IEmbeddingGenerator<string, Embedding<float>> embedding = embeddingFake;
+        IEmbeddingGenerator<TextContent, Embedding<float>> embedding = embeddingFake;
         Processing.ITranscriptChunkScoringProvider scorer = scoringFake;
 
         await embedding.GenerateAsync(
-            ["cancelled window"],
+            [new TextContent("cancelled window")],
             cancellationToken: token);
         await scorer.ScoreAsync(CreateScoringRequest(), token);
 
@@ -68,17 +68,19 @@ public sealed class TranscriptChunkingDependencyTests
 
     private static Processing.TranscriptChunkScoringRequest CreateScoringRequest()
     {
-        var segment = new Processing.TranscriptSegment(
-            "candidate window",
+        var segment = new Processing.TranscriptSegmentMetadata(
+            "segment-1",
+            "source-1",
+            4,
             TimeSpan.FromSeconds(1),
             TimeSpan.FromSeconds(2),
-            originalOrdinal: 4,
-            id: "segment-1",
-            sourceId: "source-1",
-            sourceMetadata: new Dictionary<string, string>
+            null,
+            null,
+            new Dictionary<string, string>
             {
                 ["channel"] = "left"
-            });
+            },
+            "candidate window");
 
         return new Processing.TranscriptChunkScoringRequest(
             "candidate window",
@@ -89,7 +91,7 @@ public sealed class TranscriptChunkingDependencyTests
     }
 
     private sealed class DeterministicEmbeddingProvider
-        : IEmbeddingGenerator<string, Embedding<float>>
+        : IEmbeddingGenerator<TextContent, Embedding<float>>
     {
         public string? LastRequest { get; private set; }
 
@@ -100,11 +102,11 @@ public sealed class TranscriptChunkingDependencyTests
         public int CallCount { get; private set; }
 
         public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
-            IEnumerable<string> values,
+            IEnumerable<TextContent> values,
             EmbeddingGenerationOptions? options = null,
             CancellationToken cancellationToken = default)
         {
-            LastRequest = Assert.Single(values);
+            LastRequest = Assert.Single(values).Text;
             LastCancellationToken = cancellationToken;
             CallCount++;
             return Task.FromResult(
