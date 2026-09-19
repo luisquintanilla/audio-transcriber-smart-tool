@@ -203,9 +203,11 @@ package versions and the canonical manifest together.
 
 `src/AudioTranscriber.TranscriptProcessing` is an optional, model-independent
 boundary for consuming transcript JSON. It has no project or package dependency
-on `AudioTranscriber`, Whisper, Granite, Foundry Local, preview DataIngestion,
-or any model runtime, so applications can reference it without changing the
-core transcription dependency graph.
+on `AudioTranscriber`, Whisper, Granite, Foundry Local, or any model runtime,
+so applications can reference it without changing the core transcription
+dependency graph. It references only the vendored
+`Microsoft.Extensions.DataIngestion.Abstractions` source needed for the
+canonical document exchange boundary.
 
 The boundary exposes the versioned `TranscriptDocument` and
 `TranscriptSegment` contracts (`schemaVersion: "1.0"`), plus typed
@@ -240,17 +242,14 @@ compatibility. The DataIngestion abstraction source is vendored under
 commit `e124c123afeeda2f271f3b99a70eb3cfe187a471`; see its `VENDORED.md` for
 the MIT attribution and the intentionally deferred higher pipeline boundary.
 
-## Optional transcript ingestion boundary
-
-`src/AudioTranscriber.TranscriptIngestion` maps validated transcript documents
-to the stable, runtime-independent `TranscriptIngestionDocument` contract. It
-preserves source and provenance metadata, segment IDs, source IDs, timestamps,
-speaker, confidence, source metadata, and canonical ordering. The project is
-non-packable and references only `AudioTranscriber.TranscriptProcessing`; it
-intentionally does not reference the preview
-`Microsoft.Extensions.DataIngestion` packages. Applications can bridge this
-contract to the ingestion runtime they select without adding preview
-dependencies to the core `AudioTranscriber` package.
+`src/AudioTranscriber.TranscriptIngestion` is a non-packable optional batch
+adapter over the standard `Microsoft.Extensions.DataIngestion.IngestionDocument`
+and section/paragraph elements. It delegates single-document conversion to
+`AudioTranscriber.TranscriptProcessing.TranscriptIngestionAdapter`, preserving
+source and provenance metadata, segment IDs, source IDs, timestamps, speaker,
+confidence, source metadata, and canonical ordering without introducing a
+second generic document hierarchy. Its batch overload preserves input order
+and fails fast on cancellation before enumerating the source.
 
 ## Clean local-tool installation
 
