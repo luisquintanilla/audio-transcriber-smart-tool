@@ -316,7 +316,8 @@ public sealed class FoundryLocalAdapterTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
         runtime.ReleaseFirstAttempt.SetResult();
-        await runtime.FirstAttemptFinished.Task;
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => runtime.FirstAttemptTask!);
 
         var retried = await provider.EnrichAsync(
             new TranscriptChapterEnrichmentRequest(artifact[0]));
@@ -742,15 +743,14 @@ public sealed class FoundryLocalAdapterTests
         public TaskCompletionSource FirstAttemptStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public TaskCompletionSource FirstAttemptFinished { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-
         public TaskCompletionSource ReleaseFirstAttempt { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public Task<FoundryLocalRuntimeSession>? FirstAttemptTask { get; private set; }
+
         public int PrepareCount { get; private set; }
 
-        public async Task<FoundryLocalRuntimeSession> PrepareAsync(
+        public Task<FoundryLocalRuntimeSession> PrepareAsync(
             FoundryLocalEnrichmentOptions options,
             CancellationToken cancellationToken = default)
         {
@@ -758,17 +758,22 @@ public sealed class FoundryLocalAdapterTests
             if (Interlocked.Increment(ref attempt) == 1)
             {
                 FirstAttemptStarted.SetResult();
-                await ReleaseFirstAttempt.Task.ConfigureAwait(false);
-                FirstAttemptFinished.SetResult();
-                throw new OperationCanceledException();
+                return FirstAttemptTask = FailFirstAttemptAsync();
             }
 
-            return new FoundryLocalRuntimeSession(
-                options.ModelAlias,
-                "model-id",
-                new Uri("http://127.0.0.1:5000/v1"),
-                "external-cache",
-                chatClient);
+            return Task.FromResult(
+                new FoundryLocalRuntimeSession(
+                    options.ModelAlias,
+                    "model-id",
+                    new Uri("http://127.0.0.1:5000/v1"),
+                    "external-cache",
+                    chatClient));
+        }
+
+        private async Task<FoundryLocalRuntimeSession> FailFirstAttemptAsync()
+        {
+            await ReleaseFirstAttempt.Task.ConfigureAwait(false);
+            throw new OperationCanceledException();
         }
     }
 
