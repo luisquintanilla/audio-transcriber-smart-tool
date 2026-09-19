@@ -9,8 +9,8 @@ paragraphs with the documented transcript metadata keys. It uses
 timing, provenance, minimum-duration repartitioning, deterministic ordering,
 and chapter metadata. The higher preview2 `SemanticSimilarityChunker` was not
 vendored because its `IngestionChunk` output cannot preserve source element
-identity. Focused boundary/chunk/artifact tests pass 49; Release build and
-full tests are green with 205 passed and 1 existing opt-in model test skipped.
+identity. Focused boundary/chunk/artifact tests pass 50; Release build and
+full tests are green with 206 passed and 1 existing opt-in model test skipped.
 
 # Test Generation Research
 
