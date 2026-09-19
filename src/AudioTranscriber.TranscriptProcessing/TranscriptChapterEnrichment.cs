@@ -136,9 +136,7 @@ public sealed class TranscriptChapterEnrichmentOrchestrator
 
         TranscriptOverallSummary? overallSummary = null;
         TranscriptChapterEnrichmentFailure? overallSummaryFailure = null;
-        if (options.IncludeOverallSummary &&
-            output.Any(item =>
-                item.Status == TranscriptChapterEnrichmentStatus.Succeeded))
+        if (options.IncludeOverallSummary)
         {
             var successful = output
                 .Where(item => item.Status == TranscriptChapterEnrichmentStatus.Succeeded)
@@ -151,57 +149,74 @@ public sealed class TranscriptChapterEnrichmentOrchestrator
                             item.Title,
                             item.Evidence)))
                 .ToArray();
-            var isPartial = output.Any(
-                item => item.Status != TranscriptChapterEnrichmentStatus.Succeeded);
-
-            try
-            {
-                var candidate = await overallSummaryAssembler!
-                    .AssembleAsync(
-                        new TranscriptOverallSummaryRequest(successful, isPartial),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (candidate is not null)
-                {
-                    ValidateOverallSummary(candidate, successful, isPartial);
-                    overallSummary = candidate;
-                }
-                else if (generation.FailurePolicy ==
-                         TranscriptChapterEnrichmentFailurePolicy.FailFast)
-                {
-                    throw new TranscriptChapterEnrichmentException(
-                        "overall",
-                        "missing_overall_summary");
-                }
-                else
-                {
-                    overallSummaryFailure = new TranscriptChapterEnrichmentFailure(
-                        "missing_overall_summary",
-                        "The overall summary assembler returned no summary.");
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (TranscriptChapterEnrichmentException)
-            {
-                throw;
-            }
-            catch (Exception exception)
+            if (successful.Length == 0)
             {
                 if (generation.FailurePolicy ==
                     TranscriptChapterEnrichmentFailurePolicy.FailFast)
                 {
                     throw new TranscriptChapterEnrichmentException(
                         "overall",
-                        "overall_summary_provider_failure",
-                        exception);
+                        "missing_overall_summary");
                 }
 
                 overallSummaryFailure = new TranscriptChapterEnrichmentFailure(
-                    "overall_summary_provider_failure",
-                    "The overall summary assembler failed.");
+                    "missing_overall_summary",
+                    "No successful chapter summaries were available.");
+            }
+            else
+            {
+                var isPartial = output.Any(
+                    item => item.Status != TranscriptChapterEnrichmentStatus.Succeeded);
+
+                try
+                {
+                    var candidate = await overallSummaryAssembler!
+                        .AssembleAsync(
+                            new TranscriptOverallSummaryRequest(successful, isPartial),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (candidate is not null)
+                    {
+                        ValidateOverallSummary(candidate, successful, isPartial);
+                        overallSummary = candidate;
+                    }
+                    else if (generation.FailurePolicy ==
+                             TranscriptChapterEnrichmentFailurePolicy.FailFast)
+                    {
+                        throw new TranscriptChapterEnrichmentException(
+                            "overall",
+                            "missing_overall_summary");
+                    }
+                    else
+                    {
+                        overallSummaryFailure = new TranscriptChapterEnrichmentFailure(
+                            "missing_overall_summary",
+                            "The overall summary assembler returned no summary.");
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (TranscriptChapterEnrichmentException)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    if (generation.FailurePolicy ==
+                        TranscriptChapterEnrichmentFailurePolicy.FailFast)
+                    {
+                        throw new TranscriptChapterEnrichmentException(
+                            "overall",
+                            "overall_summary_provider_failure",
+                            exception);
+                    }
+
+                    overallSummaryFailure = new TranscriptChapterEnrichmentFailure(
+                        "overall_summary_provider_failure",
+                        "The overall summary assembler failed.");
+                }
             }
         }
 

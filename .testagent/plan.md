@@ -440,10 +440,14 @@ replays the enrichment commit and keeps its provider-neutral boundaries.
    covers both options and generation-metadata constructors.
 4. Dispose parsed `JsonDocument` instances deterministically with `using var`
    in `ChapterEnrichmentTests`.
+5. When all chapters are missing/failed under `PreservePartial` with overall
+   output enabled, record `missing_overall_summary` without invoking the
+   assembler; `PreservePartial_records_missing_overall_summary_when_all_chapters_are_missing_or_failed`
+   covers the regression.
 
 ## Validation
 
-- Focused enrichment tests: `dotnet test .\tests\AudioTranscriber.Tests\AudioTranscriber.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~ChapterEnrichment" -v:minimal` — 10 passed.
+- Focused enrichment tests: `dotnet test .\tests\AudioTranscriber.Tests\AudioTranscriber.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~ChapterEnrichment" -v:minimal` — 11 passed.
 - `dotnet restore .\AudioTranscriber.sln --configfile .\NuGet.config --verbosity minimal` passed.
 - Release solution build passed with 0 warnings and 0 errors.
 - Release solution tests passed: 254 core tests plus 15 evaluation tests, 1 pre-existing opt-in Whisper smoke test skipped, 0 failed.

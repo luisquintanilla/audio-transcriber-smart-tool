@@ -298,6 +298,42 @@ public sealed class ChapterEnrichmentTests
     }
 
     [Fact]
+    public async Task PreservePartial_records_missing_overall_summary_when_all_chapters_are_missing_or_failed()
+    {
+        var artifact = CreateArtifact(
+                Segment("missing", 0, 1, 0, "segment-missing"),
+                Segment("failed", 1, 2, 1, "segment-failed"));
+        var assembler = new RecordingAssembler(
+                _ => throw new InvalidOperationException("assembler should not run"));
+        var document = await new Processing.TranscriptChapterEnrichmentOrchestrator(
+                    new ScriptedEnricher(
+                        (_, call) => call == 1
+                            ? null
+                            : throw new InvalidOperationException("provider detail")),
+                    assembler)
+                .EnrichAsync(
+                    artifact,
+                    new Processing.TranscriptChapterEnrichmentOptions
+                    {
+                        IncludeOverallSummary = true,
+                        FailurePolicy =
+                            Processing.TranscriptChapterEnrichmentFailurePolicy.PreservePartial
+                    });
+
+        Assert.Equal(
+                [
+                    Processing.TranscriptChapterEnrichmentStatus.Missing,
+                    Processing.TranscriptChapterEnrichmentStatus.Failed
+                ],
+                document.Select(chapter => chapter.Status));
+        Assert.Null(document.OverallSummary);
+        Assert.Equal(
+                "missing_overall_summary",
+                document.OverallSummaryFailure!.Code);
+        Assert.Null(assembler.LastRequest);
+    }
+
+    [Fact]
     public async Task FailFast_stops_on_provider_failure_with_stable_exception_metadata()
     {
         var artifact = CreateArtifact(

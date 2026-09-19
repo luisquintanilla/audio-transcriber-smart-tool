@@ -207,3 +207,14 @@ Both new active threads were valid and accepted:
 
 No invalid or deferred threads; no issue was required. The two new threads are
 ready to reply/resolve after the review-fix commit is pushed.
+
+# Chapter enrichment blocker re-review
+
+The all-chapters-missing/failed overall-summary blocker was valid and
+accepted. `PreservePartial` now records `missing_overall_summary` when overall
+output is enabled but no successful chapter summaries exist, without invoking
+the assembler; the established fail-fast path throws the same stable failure
+code. Regression: `PreservePartial_records_missing_overall_summary_when_all_chapters_are_missing_or_failed`.
+
+Validation after the fix: focused Release enrichment tests 11 passed; Release
+solution build passed with 0 warnings and 0 errors.
