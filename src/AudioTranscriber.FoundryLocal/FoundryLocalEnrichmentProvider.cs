@@ -147,8 +147,14 @@ public sealed class FoundryLocalEnrichmentProvider
                     ReleaseOperation);
             }
 
+            if (sessionInitialization is { IsCompleted: true } completed &&
+                (completed.IsFaulted || completed.IsCanceled))
+            {
+                sessionInitialization = null;
+            }
+
             initialization = sessionInitialization ??= InitializeSessionAsync(
-                cancellationToken);
+                CancellationToken.None);
         }
 
         try
@@ -163,6 +169,15 @@ public sealed class FoundryLocalEnrichmentProvider
         catch
         {
             ReleaseOperation();
+            lock (lifecycleGate)
+            {
+                if (ReferenceEquals(sessionInitialization, initialization) &&
+                    initialization.IsFaulted)
+                {
+                    sessionInitialization = null;
+                }
+            }
+
             throw;
         }
     }

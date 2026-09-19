@@ -294,6 +294,39 @@ public sealed class FoundryLocalAdapterTests
     }
 
     [Fact]
+    public async Task Cancelled_initialization_waiter_does_not_poison_later_retry()
+    {
+        var artifact = CreateArtifact(
+            Segment("retry", 0, 1, 0, "segment-retry"));
+        var chat = new FakeChatClient(
+            (_, _, _) => Task.FromResult(
+                ChatResponseFor(ChapterResponse(artifact[0], "retried"))));
+        var runtime = new RetryingRuntime(chat);
+        var provider = new FoundryLocalEnrichmentProvider(
+            new FoundryLocalEnrichmentOptions("chosen-model"),
+            runtime);
+        using var cancellation = new CancellationTokenSource();
+
+        var first = provider.EnrichAsync(
+            new TranscriptChapterEnrichmentRequest(artifact[0]),
+            cancellation.Token)
+            .AsTask();
+        await runtime.FirstAttemptStarted.Task;
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        runtime.ReleaseFirstAttempt.SetResult();
+        await runtime.FirstAttemptFinished.Task;
+
+        var retried = await provider.EnrichAsync(
+            new TranscriptChapterEnrichmentRequest(artifact[0]));
+
+        Assert.Equal("retried", retried!.Summary);
+        Assert.Equal(2, runtime.PrepareCount);
+        await provider.DisposeAsync();
+    }
+
+    [Fact]
     public async Task Dispose_waits_for_inflight_operations_and_is_idempotent()
     {
         var artifact = CreateArtifact(
@@ -693,6 +726,49 @@ public sealed class FoundryLocalAdapterTests
                     new Uri("http://127.0.0.1:5000/v1"),
                     "external-cache",
                     chatClient));
+        }
+    }
+
+    private sealed class RetryingRuntime : IFoundryLocalRuntime
+    {
+        private readonly IChatClient chatClient;
+        private int attempt;
+
+        public RetryingRuntime(IChatClient chatClient)
+        {
+            this.chatClient = chatClient;
+        }
+
+        public TaskCompletionSource FirstAttemptStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource FirstAttemptFinished { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource ReleaseFirstAttempt { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int PrepareCount { get; private set; }
+
+        public async Task<FoundryLocalRuntimeSession> PrepareAsync(
+            FoundryLocalEnrichmentOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            PrepareCount++;
+            if (Interlocked.Increment(ref attempt) == 1)
+            {
+                FirstAttemptStarted.SetResult();
+                await ReleaseFirstAttempt.Task.ConfigureAwait(false);
+                FirstAttemptFinished.SetResult();
+                throw new OperationCanceledException();
+            }
+
+            return new FoundryLocalRuntimeSession(
+                options.ModelAlias,
+                "model-id",
+                new Uri("http://127.0.0.1:5000/v1"),
+                "external-cache",
+                chatClient);
         }
     }
 

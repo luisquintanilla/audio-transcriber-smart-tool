@@ -112,7 +112,7 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
                     selected.Id,
                     availableModels,
                     $"Foundry Local model '{selected.Alias}' is " +
-                    $"{(isCached ? "loaded" : "not cached")} and " +
+                    $"{(isCached ? "cached" : "not cached")} and " +
                     $"{(isLoaded ? "loaded" : "not loaded")}.",
                     cachePath: cachePath);
             }
