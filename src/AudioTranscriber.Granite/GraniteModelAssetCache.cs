@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Security;
 using System.Security.Cryptography;
@@ -11,25 +12,43 @@ public sealed record GraniteModelAssets(
 public sealed class GraniteModelAssetCache
 {
     private static readonly HttpClient DefaultHttpClient = new();
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> CacheGates = new(
+        StringComparer.OrdinalIgnoreCase);
 
     private readonly GraniteModelConfiguration configuration;
     private readonly HttpClient httpClient;
-    private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly GraniteAssetDescriptor modelAsset;
+    private readonly GraniteAssetDescriptor tokenizerAsset;
+    private readonly SemaphoreSlim gate;
 
     public GraniteModelAssetCache(
         GraniteModelConfiguration configuration,
         HttpClient? httpClient = null)
+        : this(configuration, httpClient, null, null)
+    {
+    }
+
+    internal GraniteModelAssetCache(
+        GraniteModelConfiguration configuration,
+        HttpClient? httpClient,
+        GraniteAssetDescriptor? modelAsset,
+        GraniteAssetDescriptor? tokenizerAsset)
     {
         this.configuration = configuration
             ?? throw new ArgumentNullException(nameof(configuration));
         this.httpClient = httpClient ?? DefaultHttpClient;
+        this.modelAsset = modelAsset ?? configuration.ModelAsset;
+        this.tokenizerAsset = tokenizerAsset ?? configuration.TokenizerAsset;
+        gate = CacheGates.GetOrAdd(
+            configuration.CacheDirectory,
+            static _ => new SemaphoreSlim(1, 1));
     }
 
     public string ModelPath =>
-        Path.Combine(configuration.CacheDirectory, configuration.ModelAsset.FileName);
+        Path.Combine(configuration.CacheDirectory, modelAsset.FileName);
 
     public string TokenizerPath =>
-        Path.Combine(configuration.CacheDirectory, configuration.TokenizerAsset.FileName);
+        Path.Combine(configuration.CacheDirectory, tokenizerAsset.FileName);
 
     public async Task<GraniteModelAssets> EnsureAssetsAsync(
         CancellationToken cancellationToken = default)
@@ -51,17 +70,16 @@ public sealed class GraniteModelAssetCache
                 throw new GraniteModelAssetException(
                     GraniteDiagnosticCode.DownloadFailed,
                     GraniteAssetKind.Model,
-                    "The Granite model cache could not be created.",
-                    innerException: exception);
+                    "The Granite model cache could not be created.");
             }
 
             await EnsureAssetAsync(
-                    configuration.ModelAsset,
+                    modelAsset,
                     ModelPath,
                     cancellationToken)
                 .ConfigureAwait(false);
             await EnsureAssetAsync(
-                    configuration.TokenizerAsset,
+                    tokenizerAsset,
                     TokenizerPath,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -101,29 +119,40 @@ public sealed class GraniteModelAssetCache
         {
             throw;
         }
-        catch (FileNotFoundException exception)
+        catch (FileNotFoundException)
         {
             throw new GraniteModelAssetException(
                 GraniteDiagnosticCode.MissingAsset,
                 asset.Kind,
-                $"The pinned Granite {AssetLabel(asset.Kind)} asset is missing from the external cache.",
-                innerException: exception);
+                $"The pinned Granite {AssetLabel(asset.Kind)} asset is missing from the external cache.");
         }
-        catch (DirectoryNotFoundException exception)
+        catch (DirectoryNotFoundException)
         {
             throw new GraniteModelAssetException(
                 GraniteDiagnosticCode.MissingAsset,
                 asset.Kind,
-                $"The pinned Granite {AssetLabel(asset.Kind)} asset is missing from the external cache.",
-                innerException: exception);
+                $"The pinned Granite {AssetLabel(asset.Kind)} asset is missing from the external cache.");
         }
-        catch (IOException exception)
+        catch (UnauthorizedAccessException)
         {
             throw new GraniteModelAssetException(
                 GraniteDiagnosticCode.IncompatibleAsset,
                 asset.Kind,
-                $"The pinned Granite {AssetLabel(asset.Kind)} asset could not be read.",
-                innerException: exception);
+                $"The pinned Granite {AssetLabel(asset.Kind)} asset could not be read.");
+        }
+        catch (SecurityException)
+        {
+            throw new GraniteModelAssetException(
+                GraniteDiagnosticCode.IncompatibleAsset,
+                asset.Kind,
+                $"The pinned Granite {AssetLabel(asset.Kind)} asset could not be read.");
+        }
+        catch (IOException)
+        {
+            throw new GraniteModelAssetException(
+                GraniteDiagnosticCode.IncompatibleAsset,
+                asset.Kind,
+                $"The pinned Granite {AssetLabel(asset.Kind)} asset could not be read.");
         }
     }
 
@@ -174,11 +203,15 @@ public sealed class GraniteModelAssetCache
             }
 
             await VerifyAssetAsync(temporaryPath, asset, cancellationToken).ConfigureAwait(false);
-            File.Move(temporaryPath, path);
+            File.Move(temporaryPath, path, overwrite: true);
         }
         catch (GraniteModelAssetException)
         {
             throw;
+        }
+        catch (IOException) when (File.Exists(path))
+        {
+            await VerifyAssetAsync(path, asset, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (
             exception is HttpRequestException or
@@ -189,8 +222,7 @@ public sealed class GraniteModelAssetCache
             throw new GraniteModelAssetException(
                 GraniteDiagnosticCode.DownloadFailed,
                 asset.Kind,
-                $"The pinned Granite {AssetLabel(asset.Kind)} asset could not be downloaded.",
-                innerException: exception);
+                $"The pinned Granite {AssetLabel(asset.Kind)} asset could not be downloaded.");
         }
         finally
         {

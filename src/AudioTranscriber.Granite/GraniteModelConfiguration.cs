@@ -178,9 +178,8 @@ public sealed class GraniteModelAssetException : InvalidOperationException
         GraniteAssetKind assetKind,
         string message,
         string? expectedSha256 = null,
-        string? actualSha256 = null,
-        Exception? innerException = null)
-        : base(message, innerException)
+        string? actualSha256 = null)
+        : base(message)
     {
         DiagnosticCode = diagnosticCode;
         AssetKind = assetKind;
