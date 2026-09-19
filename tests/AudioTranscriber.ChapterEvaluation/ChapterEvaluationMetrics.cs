@@ -296,7 +296,7 @@ public static class ChapterEvaluationMetricCalculator
         options ??= new ChapterEvaluationOptions();
         options.Validate();
 
-        var predictionValues = predictions.ToArray();
+        var predictionValues = NormalizePredictions(predictions);
         var expectedBoundaries = fixture.ExpectedChapters
             .Skip(1)
             .Select(chapter => chapter.Start)
@@ -418,6 +418,19 @@ public static class ChapterEvaluationMetricCalculator
         sourceSegments = values.ToArray();
         return true;
     }
+
+    private static ChapterEvaluationPrediction[] NormalizePredictions(
+        IEnumerable<ChapterEvaluationPrediction> predictions) =>
+        predictions
+            .OrderBy(prediction => prediction.Start)
+            .ThenBy(prediction => prediction.End)
+            .ThenBy(prediction => prediction.Id, StringComparer.Ordinal)
+            .ThenBy(
+                prediction => string.Join(
+                    "\u001f",
+                    prediction.SourceSegmentIds),
+                StringComparer.Ordinal)
+            .ToArray();
 
     /// <summary>
     /// Matches sorted boundary sequences in order using the earliest feasible
