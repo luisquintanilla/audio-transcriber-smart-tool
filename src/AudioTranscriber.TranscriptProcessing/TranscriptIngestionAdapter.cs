@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Microsoft.Extensions.DataIngestion;
 
 namespace AudioTranscriber.TranscriptProcessing;
@@ -139,7 +140,18 @@ public sealed record TranscriptDocumentMetadata(
     public static TranscriptDocumentMetadata From(TranscriptDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        return new(document.SchemaVersion, document.Source, document.Provenance);
+        var provenance = document.Provenance;
+        return new(
+            document.SchemaVersion,
+            document.Source,
+            new TranscriptProvenance(
+                provenance.Provider,
+                provenance.Model,
+                provenance.PackageId,
+                provenance.PackageVersion,
+                provenance.Source,
+                provenance.CachePath,
+                provenance.Metadata));
     }
 }
 
@@ -167,7 +179,10 @@ public sealed record TranscriptSegmentMetadata(
             segment.End,
             segment.Speaker,
             segment.Confidence,
-            segment.SourceMetadata);
+            new ReadOnlyDictionary<string, string>(
+                new Dictionary<string, string>(
+                    segment.SourceMetadata,
+                    StringComparer.Ordinal)));
     }
 
     internal TranscriptSegment CreateSegment(string? text) =>

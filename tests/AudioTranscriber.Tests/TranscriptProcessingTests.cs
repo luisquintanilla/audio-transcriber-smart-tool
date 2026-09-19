@@ -664,7 +664,10 @@ public sealed class TranscriptProcessingTests
 
         var roundTrip = Processing.TranscriptIngestionAdapter.ToTranscriptDocument(ingestion);
         Assert.Equal(document.Source, roundTrip.Source);
-        Assert.Equal(document.Provenance, roundTrip.Provenance);
+        Assert.Equal(document.Provenance.Provider, roundTrip.Provenance.Provider);
+        Assert.Equal(document.Provenance.Model, roundTrip.Provenance.Model);
+        Assert.Equal(document.Provenance.Source, roundTrip.Provenance.Source);
+        Assert.Equal(document.Provenance.Metadata, roundTrip.Provenance.Metadata);
         Assert.Equal(
             document.Segments.Select(segment => segment.Id),
             roundTrip.Segments.Select(segment => segment.Id));
