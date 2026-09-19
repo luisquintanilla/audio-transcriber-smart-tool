@@ -315,6 +315,11 @@ public sealed class CliApplication
 
         var input = new FileInfo(inputPath);
         var output = new FileInfo(outputPath);
+        if (!input.Exists || !output.Exists)
+        {
+            return false;
+        }
+
         return string.Equals(
             ResolveLinkTargetPath(input),
             ResolveLinkTargetPath(output),
