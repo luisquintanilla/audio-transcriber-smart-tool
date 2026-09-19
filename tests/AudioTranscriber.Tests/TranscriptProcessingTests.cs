@@ -214,6 +214,32 @@ public sealed class TranscriptProcessingTests
     }
 
     [Fact]
+    public async Task Json_writer_round_trips_large_timestamp_near_hour_boundary()
+    {
+        const long hourCount = 100_000_000;
+        var hour = TimeSpan.FromTicks(hourCount * TimeSpan.TicksPerHour);
+        var start = hour - TimeSpan.FromTicks(1);
+        var document = new Processing.TranscriptDocument(
+            "large-time.wav",
+            new Processing.TranscriptProvenance("provider", "model"),
+            [
+                new Processing.TranscriptSegment(
+                    "large timestamp",
+                    start,
+                    hour,
+                    0)
+            ]);
+        var writer = new Processing.TranscriptJsonWriter();
+
+        var json = writer.Write(document);
+        var roundTrip = await ReadDocumentAsync(new Processing.TranscriptJsonReader(), json);
+
+        Assert.Contains("\"start\": \"99999999:59:59.9999999\"", json);
+        Assert.Equal(start, roundTrip.Segments[0].Start);
+        Assert.Equal(hour, roundTrip.Segments[0].End);
+    }
+
+    [Fact]
     public async Task Json_writer_is_deterministic_and_round_trips_all_contract_fields()
     {
         var document = new Processing.TranscriptDocument(

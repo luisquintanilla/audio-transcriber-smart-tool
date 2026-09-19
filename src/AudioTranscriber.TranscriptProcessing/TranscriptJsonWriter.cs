@@ -123,7 +123,7 @@ public sealed class TranscriptJsonWriter
 
     internal static string FormatTimestamp(TimeSpan value)
     {
-        var totalHours = (long)value.TotalHours;
+        var totalHours = value.Ticks / TimeSpan.TicksPerHour;
         return string.Create(
             CultureInfo.InvariantCulture,
             $"{totalHours:00}:{value.Minutes:00}:{value.Seconds:00}.{value.Ticks % TimeSpan.TicksPerSecond:0000000}");
