@@ -231,6 +231,16 @@ public sealed class TranscriptChunkBuilder
         TimeSpan maximumDuration)
     {
         var duration = end - start;
+        if (duration <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        if (maximumDuration <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumDuration));
+        }
+
         var windowCount = duration.Ticks / maximumDuration.Ticks +
             (duration.Ticks % maximumDuration.Ticks == 0 ? 0 : 1);
         var ticksPerWindow = duration.Ticks / windowCount;

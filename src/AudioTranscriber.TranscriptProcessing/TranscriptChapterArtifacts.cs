@@ -62,6 +62,9 @@ public sealed class TranscriptChapterArtifact
 
     public IReadOnlyList<TranscriptChapterSourceMetadata> SourceMetadata { get; }
 
+    /// <summary>
+    /// The evaluated model score, or <see langword="null"/> for a structural chapter.
+    /// </summary>
     public double? Score { get; }
 }
 
