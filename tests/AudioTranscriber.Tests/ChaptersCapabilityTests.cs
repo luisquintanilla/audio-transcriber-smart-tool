@@ -186,6 +186,29 @@ public sealed class ChaptersCapabilityTests
     }
 
     [Fact]
+    public void Chapter_generator_clips_gap_metadata_to_requested_start()
+    {
+        var document = CreateDocument(
+            Segment("before requested range", 0, 1, 0, "segment-before"),
+            Segment("outside requested range", 2, 3, 1, "segment-outside"),
+            Segment("inside requested range", 11, 12, 2, "segment-inside"));
+
+        var artifact = new Processing.TranscriptChapterGenerator().Generate(
+            document,
+            new Processing.TranscriptChapterGenerationOptions
+            {
+                MinimumDuration = TimeSpan.FromMilliseconds(100),
+                MaximumDuration = TimeSpan.FromSeconds(10),
+                RequestedStart = TimeSpan.FromSeconds(10)
+            });
+
+        var chapter = Assert.Single(artifact);
+        Assert.Equal("inside requested range", chapter.Text);
+        Assert.Equal(TimeSpan.FromSeconds(1), chapter.Boundary.GapBefore);
+        Assert.Null(chapter.Boundary.GapAfter);
+    }
+
+    [Fact]
     public async Task Chapters_cli_refuses_overwrite_and_supports_explicit_overwrite()
     {
         using var fixture = new TemporaryFixture();

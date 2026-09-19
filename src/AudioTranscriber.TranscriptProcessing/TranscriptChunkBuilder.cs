@@ -185,11 +185,25 @@ public sealed class TranscriptChunkBuilder
             {
                 AddRunWindows(result, input, run, options);
                 run.Clear();
+                var gapStart = TimeSpan.FromTicks(
+                    Math.Max(
+                        previousElement.Metadata.End.Ticks,
+                        requestedStart.Ticks));
+                var gapEnd = TimeSpan.FromTicks(
+                    Math.Min(
+                        element.Metadata.Start.Ticks,
+                        requestedEnd.Ticks));
+                if (gapEnd <= gapStart)
+                {
+                    previousElement = element;
+                    continue;
+                }
+
                 AddGapWindows(
                     result,
                     input.Document,
-                    previousElement.Metadata.End,
-                    element.Metadata.Start,
+                    gapStart,
+                    gapEnd,
                     options.MaximumDuration);
             }
 
