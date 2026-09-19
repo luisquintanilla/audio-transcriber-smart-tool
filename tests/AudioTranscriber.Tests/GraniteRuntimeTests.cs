@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Numerics.Tensors;
 using AudioTranscriber.Granite;
 using Microsoft.Extensions.AI;
 
@@ -96,9 +97,9 @@ public sealed class GraniteRuntimeTests
                 values: [3, 4, 0]),
             expectedDimensions: 3);
 
-        var norm = Math.Sqrt(vector.Sum(value => value * (double)value));
+        var norm = TensorPrimitives.Norm(vector.AsSpan());
 
-        Assert.Equal(1d, norm, precision: 6);
+        Assert.Equal(1f, norm, precision: 6);
     }
 
     [Fact]
