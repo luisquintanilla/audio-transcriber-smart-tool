@@ -41,9 +41,17 @@ public sealed class TranscriptIngestionAdapter
         cancellationToken.ThrowIfCancellationRequested();
 
         var mapped = new List<DataIngestion.IngestionDocument>();
-        foreach (var document in documents)
+        using var enumerator = documents.GetEnumerator();
+        while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!enumerator.MoveNext())
+            {
+                break;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var document = enumerator.Current;
             if (document is null)
             {
                 throw new ArgumentException(

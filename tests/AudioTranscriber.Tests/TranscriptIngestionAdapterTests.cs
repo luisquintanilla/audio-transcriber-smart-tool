@@ -1,3 +1,4 @@
+using System.Collections;
 using DataIngestion = Microsoft.Extensions.DataIngestion;
 using Ingestion = AudioTranscriber.TranscriptIngestion;
 using Processing = AudioTranscriber.TranscriptProcessing;
@@ -91,7 +92,8 @@ public sealed class TranscriptIngestionAdapterTests
                     {
                         ["channel"] = "center"
                     })
-            ]);
+            ],
+            provenanceSource: "test-source");
 
         var mapped = new Ingestion.TranscriptIngestionAdapter().Map(document);
         var roundTrip = Processing.TranscriptIngestionAdapter.ToTranscriptDocument(mapped);
@@ -99,6 +101,7 @@ public sealed class TranscriptIngestionAdapterTests
         Assert.Equal(document.Source, roundTrip.Source);
         Assert.Equal(document.Provenance.Provider, roundTrip.Provenance.Provider);
         Assert.Equal(document.Provenance.Model, roundTrip.Provenance.Model);
+        Assert.Equal("test-source", roundTrip.Provenance.Source);
         Assert.Equal(document.Provenance.Metadata, roundTrip.Provenance.Metadata);
         var originalSegment = Assert.Single(document.Segments);
         var roundTripSegment = Assert.Single(roundTrip.Segments);
@@ -183,19 +186,14 @@ public sealed class TranscriptIngestionAdapterTests
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        var enumerated = false;
-
-        IEnumerable<Processing.TranscriptDocument> Documents()
-        {
-            enumerated = true;
-            yield return CreateDocument("document.wav");
-        }
+        var documents = new TrackingDocuments(CreateDocument("document.wav"));
 
         Assert.Throws<OperationCanceledException>(
             () => new Ingestion.TranscriptIngestionAdapter().Map(
-                Documents(),
+                documents,
                 cancellation.Token));
-        Assert.False(enumerated);
+        Assert.Equal(0, documents.MoveNextCalls);
+        Assert.Equal(0, documents.DisposeCalls);
     }
 
     [Fact]
@@ -214,13 +212,15 @@ public sealed class TranscriptIngestionAdapterTests
 
     private static Processing.TranscriptDocument CreateDocument(
         string source,
-        IReadOnlyList<Processing.TranscriptSegment>? segments = null)
+        IReadOnlyList<Processing.TranscriptSegment>? segments = null,
+        string? provenanceSource = null)
     {
         return new Processing.TranscriptDocument(
             source,
             new Processing.TranscriptProvenance(
                 "provider",
                 "model",
+                source: provenanceSource,
                 metadata: new Dictionary<string, string>
                 {
                     ["run"] = "42"
@@ -233,5 +233,65 @@ public sealed class TranscriptIngestionAdapterTests
                     TimeSpan.FromSeconds(1),
                     0)
             ]);
+    }
+
+    private sealed class TrackingDocuments : IEnumerable<Processing.TranscriptDocument>
+    {
+        private readonly Processing.TranscriptDocument _document;
+
+        public TrackingDocuments(Processing.TranscriptDocument document)
+        {
+            _document = document;
+        }
+
+        public int MoveNextCalls { get; private set; }
+
+        public int DisposeCalls { get; private set; }
+
+        public IEnumerator<Processing.TranscriptDocument> GetEnumerator() =>
+            new Enumerator(this, _document);
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        private sealed class Enumerator : IEnumerator<Processing.TranscriptDocument>
+        {
+            private readonly TrackingDocuments _owner;
+            private readonly Processing.TranscriptDocument _document;
+            private bool _hasCurrent;
+
+            public Enumerator(
+                TrackingDocuments owner,
+                Processing.TranscriptDocument document)
+            {
+                _owner = owner;
+                _document = document;
+            }
+
+            public Processing.TranscriptDocument Current =>
+                _hasCurrent
+                    ? _document
+                    : throw new InvalidOperationException();
+
+            object IEnumerator.Current => Current;
+
+            public bool MoveNext()
+            {
+                _owner.MoveNextCalls++;
+                if (_hasCurrent)
+                {
+                    return false;
+                }
+
+                _hasCurrent = true;
+                return true;
+            }
+
+            public void Reset() => throw new NotSupportedException();
+
+            public void Dispose()
+            {
+                _owner.DisposeCalls++;
+            }
+        }
     }
 }

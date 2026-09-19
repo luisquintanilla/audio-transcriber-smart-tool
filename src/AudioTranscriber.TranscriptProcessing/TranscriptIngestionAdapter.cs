@@ -151,9 +151,7 @@ public sealed record TranscriptDocumentMetadata(
                 provenance.PackageVersion,
                 provenance.Source,
                 provenance.CachePath,
-                new Dictionary<string, string>(
-                    provenance.Metadata,
-                    StringComparer.Ordinal)));
+                provenance.Metadata));
     }
 }
 
