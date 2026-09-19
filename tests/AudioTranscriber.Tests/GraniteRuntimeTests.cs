@@ -97,7 +97,7 @@ public sealed class GraniteRuntimeTests
                 values: [3, 4, 0]),
             expectedDimensions: 3);
 
-        var norm = Math.Sqrt(vector.Sum(value => value * (double)value));
+        var norm = TensorPrimitives.Norm(vector.AsSpan());
 
         Assert.Equal(1f, norm, precision: 6);
     }
