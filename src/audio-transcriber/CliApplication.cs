@@ -202,10 +202,7 @@ public sealed class CliApplication
             return 2;
         }
 
-        if (string.Equals(
-                options.InputPath,
-                options.OutputPath,
-                StringComparison.OrdinalIgnoreCase))
+        if (AreSameChapterInputAndOutput(options.InputPath, options.OutputPath))
         {
             await error.WriteLineAsync(
                 "error: chapter input and output must be different files: " +
@@ -300,6 +297,34 @@ public sealed class CliApplication
         {
             graniteProvider?.Dispose();
         }
+    }
+
+    private static bool AreSameChapterInputAndOutput(
+        string inputPath,
+        string outputPath)
+    {
+        if (string.Equals(inputPath, outputPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var input = new FileInfo(inputPath);
+        var output = new FileInfo(outputPath);
+        if (!input.Exists || !output.Exists)
+        {
+            return false;
+        }
+
+        var resolvedInputPath =
+            input.ResolveLinkTarget(returnFinalTarget: true)?.FullName ??
+            input.FullName;
+        var resolvedOutputPath =
+            output.ResolveLinkTarget(returnFinalTarget: true)?.FullName ??
+            output.FullName;
+        return string.Equals(
+            resolvedInputPath,
+            resolvedOutputPath,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryParseTranscribeOptions(

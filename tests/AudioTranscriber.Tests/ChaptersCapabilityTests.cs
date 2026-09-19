@@ -266,6 +266,35 @@ public sealed class ChaptersCapabilityTests
     }
 
     [Fact]
+    public async Task Chapters_cli_rejects_input_symlink_to_output()
+    {
+        using var fixture = new TemporaryFixture();
+        var output = fixture.WriteTranscript(
+            CreateDocument(Segment("source must survive", 0, 1, 0, "segment-source")));
+        var input = fixture.Path("input-alias.json");
+        try
+        {
+            File.CreateSymbolicLink(input, output);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        var original = File.ReadAllText(output);
+        var error = new StringWriter();
+
+        var exitCode = await new CliApplication().RunAsync(
+            ["chapters", "--input", input, "--output", output, "--overwrite"],
+            new StringWriter(),
+            error);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("must be different files", error.ToString(), StringComparison.Ordinal);
+        Assert.Equal(original, File.ReadAllText(output));
+    }
+
+    [Fact]
     public async Task Artifact_writer_removes_partial_file_after_destination_failure()
     {
         using var fixture = new TemporaryFixture();
