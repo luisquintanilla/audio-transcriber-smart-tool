@@ -21,14 +21,6 @@ public sealed class GraniteSentencePieceTokenizer : IGraniteTokenizer, IDisposab
         Func<string, Stream>? openStream)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tokenizerPath);
-        if (!File.Exists(tokenizerPath))
-        {
-            throw new GraniteModelAssetException(
-                GraniteDiagnosticCode.MissingAsset,
-                GraniteAssetKind.Tokenizer,
-                "The pinned Granite tokenizer asset is missing from the external cache.");
-        }
-
         try
         {
             using var stream = (openStream ?? File.OpenRead)(tokenizerPath);
@@ -38,11 +30,25 @@ public sealed class GraniteSentencePieceTokenizer : IGraniteTokenizer, IDisposab
                 true);
         }
         catch (Exception exception) when (
+            exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            throw new GraniteModelAssetException(
+                GraniteDiagnosticCode.MissingAsset,
+                GraniteAssetKind.Tokenizer,
+                "The pinned Granite tokenizer asset is missing from the external cache.");
+        }
+        catch (Exception exception) when (
+            exception is UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new GraniteModelAssetException(
+                GraniteDiagnosticCode.IncompatibleAsset,
+                GraniteAssetKind.Tokenizer,
+                "The pinned Granite tokenizer asset could not be read.");
+        }
+        catch (Exception exception) when (
             exception is IOException or
             InvalidDataException or
-            ArgumentException or
-            UnauthorizedAccessException or
-            System.Security.SecurityException)
+            ArgumentException)
         {
             throw new GraniteModelAssetException(
                 GraniteDiagnosticCode.IncompatibleAsset,
@@ -72,9 +78,9 @@ public sealed class GraniteSentencePieceTokenizer : IGraniteTokenizer, IDisposab
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var ids = tokenizer
-            .EncodeToIds(text)
-            .Take(maxTokens)
+        var encodedIds = tokenizer.EncodeToIds(text);
+        var ids = GraniteOnnxInferenceRuntime.GraniteTokenizerBoundaries
+            .TruncatePreservingSpecialTokens(encodedIds, maxTokens)
             .Select(static id => (long)id)
             .ToArray();
         if (ids.Length == 0)
@@ -102,14 +108,6 @@ public sealed class GraniteOnnxInferenceRuntime : IGraniteInferenceRuntime, IDis
     public GraniteOnnxInferenceRuntime(string modelPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelPath);
-        if (!File.Exists(modelPath))
-        {
-            throw new GraniteModelAssetException(
-                GraniteDiagnosticCode.MissingAsset,
-                GraniteAssetKind.Model,
-                "The pinned Granite model asset is missing from the external cache.");
-        }
-
         try
         {
             session = CreateSession(modelPath);
@@ -117,6 +115,22 @@ public sealed class GraniteOnnxInferenceRuntime : IGraniteInferenceRuntime, IDis
         catch (GraniteModelAssetException)
         {
             throw;
+        }
+        catch (Exception exception) when (
+            exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            throw new GraniteModelAssetException(
+                GraniteDiagnosticCode.MissingAsset,
+                GraniteAssetKind.Model,
+                "The pinned Granite model asset is missing from the external cache.");
+        }
+        catch (Exception exception) when (
+            exception is UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new GraniteModelAssetException(
+                GraniteDiagnosticCode.IncompatibleAsset,
+                GraniteAssetKind.Model,
+                "The pinned Granite model asset could not be read.");
         }
         catch (Exception exception) when (
             exception is OnnxRuntimeException or
@@ -137,6 +151,11 @@ public sealed class GraniteOnnxInferenceRuntime : IGraniteInferenceRuntime, IDis
         }
     }
 
+    /// <summary>
+    /// Runs synchronous native ONNX inference. Cancellation is checked before
+    /// and after the native call; ONNX Runtime does not expose interruption
+    /// for an in-flight inference invocation.
+    /// </summary>
     public ValueTask<GraniteInferenceOutput> InferAsync(
         GraniteTokenizedInput input,
         CancellationToken cancellationToken = default)
@@ -230,6 +249,36 @@ public sealed class GraniteOnnxInferenceRuntime : IGraniteInferenceRuntime, IDis
                 GraniteDiagnosticCode.IncompatibleAsset,
                 GraniteAssetKind.Model,
                 "The Granite ONNX model must expose input_ids and attention_mask inputs.");
+        }
+    }
+
+    internal static class GraniteTokenizerBoundaries
+    {
+        public static IReadOnlyList<int> TruncatePreservingSpecialTokens(
+            IReadOnlyList<int> tokenIds,
+            int maxTokens)
+        {
+            ArgumentNullException.ThrowIfNull(tokenIds);
+            if (maxTokens < 2)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(maxTokens),
+                    "At least two tokens are required to preserve BOS and EOS.");
+            }
+
+            if (tokenIds.Count <= maxTokens)
+            {
+                return tokenIds;
+            }
+
+            var truncated = new int[maxTokens];
+            for (var index = 0; index < maxTokens - 1; index++)
+            {
+                truncated[index] = tokenIds[index];
+            }
+
+            truncated[^1] = tokenIds[^1];
+            return truncated;
         }
     }
 }

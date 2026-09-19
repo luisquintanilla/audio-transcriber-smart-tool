@@ -84,6 +84,22 @@ public sealed class GraniteAssetIntegrityTests
     }
 
     [Fact]
+    public async Task AssetCache_ExistingUnreadablePathReportsReadDiagnostic()
+    {
+        using var temporary = new GraniteTestDirectory();
+        var configuration = new GraniteModelConfiguration(temporary.Path);
+        Directory.CreateDirectory(
+            Path.Combine(configuration.CacheDirectory, GraniteModelMetadata.ModelFileName));
+
+        var exception = await Assert.ThrowsAsync<GraniteModelAssetException>(
+            () => new GraniteModelAssetCache(configuration).EnsureAssetsAsync());
+
+        Assert.Equal(GraniteDiagnosticCode.IncompatibleAsset, exception.DiagnosticCode);
+        Assert.Equal(GraniteAssetKind.Model, exception.AssetKind);
+        Assert.DoesNotContain(configuration.CacheDirectory, exception.ToString());
+    }
+
+    [Fact]
     public void AssetVerification_IncompatibleAssetReportsStableDiagnostic()
     {
         using var temporary = new GraniteTestDirectory();

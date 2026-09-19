@@ -60,6 +60,10 @@ public sealed class GraniteEmbeddingProvider :
             capabilityProbe);
     }
 
+    /// <summary>
+    /// Generates Granite embeddings. Cancellation is cooperative around the
+    /// synchronous native ONNX call and cannot interrupt inference already in flight.
+    /// </summary>
     public async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
         IEnumerable<TextContent> values,
         EmbeddingGenerationOptions? options = null,

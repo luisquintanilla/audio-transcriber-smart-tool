@@ -58,6 +58,23 @@ public sealed class GraniteRuntimeTests
     }
 
     [Fact]
+    public void Runtime_ExistingUnreadableModelReportsReadDiagnostic()
+    {
+        using var temporary = new GraniteTestDirectory();
+        var modelPath = Path.Combine(temporary.Path, "unreadable-model.onnx");
+        Directory.CreateDirectory(modelPath);
+
+        var exception = Assert.Throws<GraniteModelAssetException>(
+            () => new GraniteOnnxInferenceRuntime(modelPath));
+
+        Assert.Equal(GraniteDiagnosticCode.IncompatibleAsset, exception.DiagnosticCode);
+        Assert.DoesNotContain(
+            modelPath,
+            exception.ToString(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void FakeRuntime_UsesClsPooling()
     {
         var output = new GraniteInferenceOutput(
@@ -84,6 +101,15 @@ public sealed class GraniteRuntimeTests
         Assert.Equal(
             output.BatchSize * output.SequenceLength * output.HiddenSize,
             output.Values.Count);
+    }
+
+    [Fact]
+    public void TokenizerBoundary_PreservesBosAndEosWhenTruncating()
+    {
+        var truncated = GraniteOnnxInferenceRuntime.GraniteTokenizerBoundaries
+            .TruncatePreservingSpecialTokens([101, 10, 11, 12, 102], 4);
+
+        Assert.Equal([101, 10, 11, 102], truncated);
     }
 
     [Fact]

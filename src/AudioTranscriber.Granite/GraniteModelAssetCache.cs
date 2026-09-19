@@ -161,9 +161,9 @@ public sealed class GraniteModelAssetCache
         string path,
         CancellationToken cancellationToken)
     {
-        if (File.Exists(path))
+        if (await TryVerifyExistingAssetAsync(asset, path, cancellationToken)
+                .ConfigureAwait(false))
         {
-            await VerifyAssetAsync(path, asset, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -209,13 +209,21 @@ public sealed class GraniteModelAssetCache
         {
             throw;
         }
-        catch (IOException) when (File.Exists(path))
+        catch (IOException)
         {
-            await VerifyAssetAsync(path, asset, cancellationToken).ConfigureAwait(false);
+            if (await TryVerifyExistingAssetAsync(asset, path, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return;
+            }
+
+            throw new GraniteModelAssetException(
+                GraniteDiagnosticCode.DownloadFailed,
+                asset.Kind,
+                $"The pinned Granite {AssetLabel(asset.Kind)} asset could not be downloaded.");
         }
         catch (Exception exception) when (
             exception is HttpRequestException or
-            IOException or
             UnauthorizedAccessException or
             SecurityException)
         {
@@ -230,6 +238,23 @@ public sealed class GraniteModelAssetCache
             {
                 File.Delete(temporaryPath);
             }
+        }
+    }
+
+    private static async Task<bool> TryVerifyExistingAssetAsync(
+        GraniteAssetDescriptor asset,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await VerifyAssetAsync(path, asset, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (GraniteModelAssetException exception)
+            when (exception.DiagnosticCode == GraniteDiagnosticCode.MissingAsset)
+        {
+            return false;
         }
     }
 
