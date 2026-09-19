@@ -165,13 +165,6 @@ public sealed class TranscriptChunkBuilder
                     result.Add(new TranscriptChunkWindow(previous.End, segment.Start, []));
                     run.Clear();
                 }
-                else if (
-                    segment.End - run[0].Start > options.MaximumDuration &&
-                    run[0].End - run[0].Start <= options.MaximumDuration)
-                {
-                    AddRunWindows(result, run, options);
-                    run.Clear();
-                }
             }
 
             run.Add(segment);
@@ -196,31 +189,59 @@ public sealed class TranscriptChunkBuilder
             return;
         }
 
-        var current = new List<TranscriptSegment>();
-        foreach (var segment in run)
+        var best = new Partition?[run.Count + 1];
+        best[0] = new Partition(0, 0, []);
+
+        for (var start = 0; start < run.Count; start++)
         {
-            if (current.Count == 0)
+            if (best[start] is not { } prefix)
             {
-                current.Add(segment);
                 continue;
             }
 
-            var candidateDuration = segment.End - current[0].Start;
-            if (candidateDuration <= options.MaximumDuration)
+            for (var end = start; end < run.Count; end++)
             {
-                current.Add(segment);
-                continue;
+                var candidateDuration = run[end].End - run[start].Start;
+                if (end > start && candidateDuration > options.MaximumDuration)
+                {
+                    break;
+                }
+
+                var candidate = new Partition(
+                    prefix.ShortWindowCount +
+                        (candidateDuration < options.MinimumDuration ? 1 : 0),
+                    prefix.WindowCount + 1,
+                    [.. prefix.Ends, end + 1]);
+                if (best[end + 1] is not { } existing ||
+                    candidate.IsBetterThan(existing))
+                {
+                    best[end + 1] = candidate;
+                }
             }
-
-            output.Add(CreateContentWindow(current));
-            current.Clear();
-            current.Add(segment);
         }
 
-        if (current.Count > 0)
+        var final = best[^1]
+            ?? throw new InvalidOperationException(
+                "Transcript segments could not be partitioned into windows.");
+        var startIndex = 0;
+        foreach (var endIndex in final.Ends)
         {
-            output.Add(CreateContentWindow(current));
+            output.Add(
+                CreateContentWindow(
+                    run.Skip(startIndex).Take(endIndex - startIndex).ToArray()));
+            startIndex = endIndex;
         }
+    }
+
+    private sealed record Partition(
+        int ShortWindowCount,
+        int WindowCount,
+        IReadOnlyList<int> Ends)
+    {
+        public bool IsBetterThan(Partition other) =>
+            ShortWindowCount < other.ShortWindowCount ||
+            (ShortWindowCount == other.ShortWindowCount &&
+             WindowCount < other.WindowCount);
     }
 
     private static TranscriptChunkWindow CreateContentWindow(

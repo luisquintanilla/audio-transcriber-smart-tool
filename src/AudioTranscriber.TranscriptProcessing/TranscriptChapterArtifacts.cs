@@ -9,6 +9,11 @@ public static class TranscriptChapterArtifactSchema
     public const string CurrentVersion = "1.0";
 }
 
+public sealed record TranscriptChapterSourceMetadata(
+    string SourceSegmentId,
+    string Key,
+    string Value);
+
 /// <summary>
 /// A stable, versioned chapter artifact derived from a transcript window.
 /// </summary>
@@ -18,7 +23,7 @@ public sealed class TranscriptChapterArtifact
         string id,
         string title,
         TranscriptChunkWindow window,
-        IReadOnlyDictionary<string, string> sourceMetadata)
+        IReadOnlyList<TranscriptChapterSourceMetadata> sourceMetadata)
     {
         Id = id;
         SchemaVersion = TranscriptChapterArtifactSchema.CurrentVersion;
@@ -51,7 +56,7 @@ public sealed class TranscriptChapterArtifact
 
     public IReadOnlyList<TranscriptSegment> SourceSegments { get; }
 
-    public IReadOnlyDictionary<string, string> SourceMetadata { get; }
+    public IReadOnlyList<TranscriptChapterSourceMetadata> SourceMetadata { get; }
 
     public double Score { get; }
 }
@@ -196,28 +201,24 @@ public sealed class TranscriptChapterArtifactGenerator
     private static string CreateId(TranscriptChunkWindow window, int index) =>
         $"chapter-{index + 1:D4}-{window.Id}";
 
-    private static IReadOnlyDictionary<string, string> MergeMetadata(
+    private static IReadOnlyList<TranscriptChapterSourceMetadata> MergeMetadata(
         IReadOnlyList<TranscriptSegment> segments)
     {
-        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        var values = new List<TranscriptChapterSourceMetadata>();
         foreach (var segment in segments)
         {
             foreach (var entry in segment.SourceMetadata.OrderBy(
                          entry => entry.Key,
                          StringComparer.Ordinal))
             {
-                if (!values.TryGetValue(entry.Key, out var existing))
-                {
-                    values.Add(entry.Key, entry.Value);
-                }
-                else if (!string.Equals(existing, entry.Value, StringComparison.Ordinal))
-                {
-                    values[$"{segment.Id}:{entry.Key}"] = entry.Value;
-                }
+                values.Add(new TranscriptChapterSourceMetadata(
+                    segment.Id,
+                    entry.Key,
+                    entry.Value));
             }
         }
 
-        return new System.Collections.ObjectModel.ReadOnlyDictionary<string, string>(values);
+        return Array.AsReadOnly(values.ToArray());
     }
 
     private static void WriteMetadata(
@@ -235,6 +236,25 @@ public sealed class TranscriptChapterArtifactGenerator
         }
 
         writer.WriteEndObject();
+    }
+
+    private static void WriteMetadata(
+        Utf8JsonWriter writer,
+        string name,
+        IReadOnlyList<TranscriptChapterSourceMetadata> metadata)
+    {
+        writer.WritePropertyName(name);
+        writer.WriteStartArray();
+        foreach (var entry in metadata)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("sourceSegmentId", entry.SourceSegmentId);
+            writer.WriteString("key", entry.Key);
+            writer.WriteString("value", entry.Value);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
     }
 
     private static void WriteOptionalString(

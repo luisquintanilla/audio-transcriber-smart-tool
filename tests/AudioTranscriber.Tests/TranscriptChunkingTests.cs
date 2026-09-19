@@ -422,6 +422,57 @@ public sealed class TranscriptChunkingTests
     }
 
     [Fact]
+    public void Build_MinimumDuration_RebalancesBoundaryToAvoidShortTail()
+    {
+        var first = Segment(
+            "long first fragment",
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(0.8),
+            ordinal: 0,
+            id: "segment-rebalance-first");
+        var second = Segment(
+            "short middle fragment",
+            TimeSpan.FromSeconds(0.8),
+            TimeSpan.FromSeconds(1),
+            ordinal: 1,
+            id: "segment-rebalance-middle");
+        var third = Segment(
+            "short final fragment",
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1.3),
+            ordinal: 2,
+            id: "segment-rebalance-final");
+
+        var result = CreateBuilder().Build(
+            CreateDocument(first, second, third),
+            CreateOptions(
+                minimumDuration: TimeSpan.FromSeconds(0.4),
+                maximumDuration: TimeSpan.FromSeconds(1)));
+
+        Assert.Collection(
+            result.Windows,
+            firstWindow =>
+            {
+                Assert.Equal(TimeSpan.Zero, firstWindow.Start);
+                Assert.Equal(TimeSpan.FromSeconds(0.8), firstWindow.End);
+                Assert.Equal(
+                    ["segment-rebalance-first"],
+                    firstWindow.SourceSegmentIds);
+            },
+            secondWindow =>
+            {
+                Assert.Equal(TimeSpan.FromSeconds(0.8), secondWindow.Start);
+                Assert.Equal(TimeSpan.FromSeconds(1.3), secondWindow.End);
+                Assert.Equal(
+                    ["segment-rebalance-middle", "segment-rebalance-final"],
+                    secondWindow.SourceSegmentIds);
+                Assert.True(
+                    secondWindow.End - secondWindow.Start >=
+                    TimeSpan.FromSeconds(0.4));
+            });
+    }
+
+    [Fact]
     public void Build_MinimumDuration_WhenGapPreventsExpansion_UsesExplicitGap()
     {
         var first = Segment(

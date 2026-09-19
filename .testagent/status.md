@@ -2,9 +2,9 @@
 
 ## Scope and checklist
 
-The requested suite is broad but bounded to the transcript chunking foundation. The
-following checklist is complete in the generated tests unless noted as blocked by
-the intentionally absent production API:
+The requested suite is broad but bounded to the transcript chunking foundation.
+The checklist below records coverage in the generated tests and the production
+contracts implemented by this PR:
 
 | Requirement | Evidence |
 |---|---|
@@ -12,13 +12,13 @@ the intentionally absent production API:
 | Transcript-aware chunk/window construction preserving source segment IDs and metadata | `Build_SingleSegment_PreservesSourceIdAndMetadata`; `Build_MultipleSegments_PreservesAllSourceIdsAndMetadata`; `Generate_PreservesSourceIdsAndMetadata` |
 | Snapped segment boundaries | `Build_SnapsStartToSourceSegmentBoundary`; `Build_SnapsEndToSourceSegmentBoundary`; `Build_SnapsInternalStartToSourceSegmentBoundary`; `Build_SnapsInternalEndToSourceSegmentBoundary` |
 | Explicit gaps and empty input | `Build_EmptyTranscript_ReturnsEmptyResult`; `Build_GapBetweenSegments_EmitsExplicitGap`; `Build_GapAtChunkBoundary_PreservesGapSemantics`; `Generate_EmptyChunkResult_ProducesDeterministicEmptyArtifact` |
-| Minimum/maximum duration behavior | `Build_RespectsMinimumDuration`; `Build_MinimumDuration_WhenGapPreventsExpansion_UsesExplicitGap`; `Build_RespectsMaximumDuration`; `Build_InvalidDurationOptions_ThrowsDocumentedArgumentException` |
+| Minimum/maximum duration behavior | `Build_RespectsMinimumDuration`; `Build_MinimumDuration_MergesContiguousSegmentsWithinMaximum`; `Build_MinimumDuration_RebalancesBoundaryToAvoidShortTail`; `Build_MinimumDuration_WhenGapPreventsExpansion_UsesExplicitGap`; `Build_RespectsMaximumDuration`; `Build_InvalidDurationOptions_ThrowsDocumentedArgumentException` |
 | Malformed timing validation | `Build_MalformedTiming_IsRejectedWithDocumentedValidationDetails` |
-| Deterministic chapter artifacts | `Generate_SameChunkResult_ProducesEquivalentArtifacts`; `Generate_PreservesChunkOrder`; `Serialize_SameArtifacts_ProducesIdenticalOutput`; `Generate_PreservesSourceIdsAndMetadata`; `Generate_UsesVersionedArtifactContract` |
+| Deterministic chapter artifacts | `Generate_SameChunkResult_ProducesEquivalentArtifacts`; `Generate_PreservesChunkOrder`; `Serialize_SameArtifacts_ProducesIdenticalOutput`; `Generate_PreservesSourceIdsAndMetadata`; `Generate_PreservesCollidingMetadataKeysWithoutSyntheticKeyCollisions`; `Generate_UsesVersionedArtifactContract` |
 | Cancellation | `BuildAsync_CancellationBeforeWork_ThrowsOperationCanceledException`; `BuildAsync_CancellationDuringEmbedding_StopsAndThrowsOperationCanceledException`; `BuildAsync_CancellationDuringScoring_StopsAndThrowsOperationCanceledException`; `GenerateAsync_CancellationIsPropagated` |
 | Propagated errors | `BuildAsync_PropagatesEmbeddingProviderError`; `BuildAsync_PropagatesChunkScoringError` |
-| No real model integrations, CLI, manifest, packages, CI, or unrelated changes | Only five additive test files and the three required `.testagent` artifacts were added; no production, package, CLI, manifest, or CI files changed |
-| Report compile blockers from missing production types | Full build and test validation record the absent chunking/provider declarations below |
+| No real model integrations, CLI, manifest, packages, CI, or unrelated changes | Five additive test files, three production processing files, three `.testagent` artifacts, and the related README section changed; no model, package, CLI, manifest, or CI integration was added |
+| Report compile blockers from missing production types | Initial compile blockers were removed by the production contracts implemented in this PR |
 
 The chapter-generation API exposes no deterministic mid-generation cancellation
 seam, so only pre-cancelled chapter generation is covered. Adding a timing-based
@@ -42,7 +42,7 @@ documented broad exception behavior without inventing members or messages.
 - `Constructor_PreservesDocumentedDiagnosticDetails`
 - `ReaderFailure_ExposesStableFormatDiagnostics`
 
-### `tests/AudioTranscriber.Tests/TranscriptChunkingTests.cs` (15)
+### `tests/AudioTranscriber.Tests/TranscriptChunkingTests.cs` (16)
 
 - `Build_EmptyTranscript_ReturnsEmptyResult`
 - `Build_SingleSegment_PreservesSourceIdAndMetadata`
@@ -55,6 +55,7 @@ documented broad exception behavior without inventing members or messages.
 - `Build_GapAtChunkBoundary_PreservesGapSemantics`
 - `Build_RespectsMinimumDuration`
 - `Build_MinimumDuration_MergesContiguousSegmentsWithinMaximum`
+- `Build_MinimumDuration_RebalancesBoundaryToAvoidShortTail`
 - `Build_MinimumDuration_WhenGapPreventsExpansion_UsesExplicitGap`
 - `Build_RespectsMaximumDuration`
 - `Build_InvalidDurationOptions_ThrowsDocumentedArgumentException`
@@ -69,10 +70,11 @@ documented broad exception behavior without inventing members or messages.
 - `BuildAsync_PropagatesChunkScoringError`
 - `BuildAsync_PreservesDeterministicOutputForDeterministicDependencies`
 
-### `tests/AudioTranscriber.Tests/ChapterArtifactTests.cs` (7)
+### `tests/AudioTranscriber.Tests/ChapterArtifactTests.cs` (8)
 
 - `Generate_SameChunkResult_ProducesEquivalentArtifacts`
 - `Generate_UsesVersionedArtifactContract`
+- `Generate_PreservesCollidingMetadataKeysWithoutSyntheticKeyCollisions`
 - `Generate_PreservesChunkOrder`
 - `Serialize_SameArtifacts_ProducesIdenticalOutput`
 - `Generate_EmptyChunkResult_ProducesDeterministicEmptyArtifact`
@@ -96,11 +98,12 @@ dotnet test .\AudioTranscriber.sln
 
 The initial scoped and full builds/tests stopped at compilation while the
 production declarations were absent. After implementing the contracts and
-builder, the focused chunking/artifact run passed 34 tests. The final solution
+builder, the focused chunking/artifact run passed 36 tests. The final solution
 build completed with 0 warnings and 0 errors, and the final solution test run
-passed 193 tests with 1 pre-existing opt-in model smoke test skipped.
+passed 196 tests with 1 pre-existing opt-in model smoke test skipped.
 
-The initial compile blockers were limited to the not-yet-created production declarations:
+The initial compile blockers were limited to the production declarations added
+by this PR:
 
 - `TranscriptChunkBuilder`
 - `TranscriptChunkingOptions`
@@ -116,9 +119,9 @@ The initial compile blockers were limited to the not-yet-created production decl
   compile until the production API exists. Internal boundary, duration/gap,
   dependency request, deterministic-output, and non-vacuous gap assertions were
   strengthened in response to review findings.
-- Assertion-quality review: final review passed. All 32 tests have substantive
+- Assertion-quality review: final review passed. All 36 tests have substantive
   assertions; no assertion-free or wholly trivial tests remain. Equality,
   structural, exception, negative, collection, and dependency side-effect
   assertions are used where applicable.
-- No production mutations were applied because production behavior is absent and
-  the test suite cannot establish a green baseline.
+- Production behavior is covered by the focused chunking and artifact suite;
+  no test-only production substitutes or real model integrations were added.

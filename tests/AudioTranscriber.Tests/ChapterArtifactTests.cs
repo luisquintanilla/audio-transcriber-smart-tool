@@ -50,13 +50,15 @@ public sealed class ChapterArtifactTests
             first.Select(chapter => string.Join(
                 "\u001f",
                 chapter.SourceMetadata
-                    .OrderBy(pair => pair.Key)
-                    .Select(pair => $"{pair.Key}={pair.Value}"))),
+                    .OrderBy(pair => pair.SourceSegmentId)
+                    .ThenBy(pair => pair.Key)
+                    .Select(pair => $"{pair.SourceSegmentId}:{pair.Key}={pair.Value}"))),
             second.Select(chapter => string.Join(
                 "\u001f",
                 chapter.SourceMetadata
-                    .OrderBy(pair => pair.Key)
-                    .Select(pair => $"{pair.Key}={pair.Value}"))));
+                    .OrderBy(pair => pair.SourceSegmentId)
+                    .ThenBy(pair => pair.Key)
+                    .Select(pair => $"{pair.SourceSegmentId}:{pair.Key}={pair.Value}"))));
         Assert.Equal(
             first.Count,
             first.Select(chapter => chapter.Id).Distinct(StringComparer.Ordinal).Count());
@@ -201,11 +203,54 @@ public sealed class ChapterArtifactTests
         Assert.Equal(
             ["left-value", "right-value"],
             artifacts
-                .SelectMany(chapter => chapter.SourceMetadata.OrderBy(pair => pair.Key))
+                .SelectMany(
+                    chapter => chapter.SourceMetadata.OrderBy(
+                        pair => pair.SourceSegmentId))
                 .Select(pair => pair.Value));
         Assert.Equal(
             ["left source", "right source"],
             artifacts.Select(chapter => chapter.Text));
+    }
+
+    [Fact]
+    public void Generate_PreservesCollidingMetadataKeysWithoutSyntheticKeyCollisions()
+    {
+        var chunkResult = CreateChunkBuilder().Build(
+            CreateDocument(
+                Segment(
+                    "first metadata",
+                    0,
+                    1,
+                    0,
+                    id: "segment-one",
+                    metadata: new Dictionary<string, string>
+                    {
+                        ["k"] = "first-k",
+                        ["segment-two:k"] = "first-prefixed"
+                    }),
+                Segment(
+                    "second metadata",
+                    1,
+                    2,
+                    1,
+                    id: "segment-two",
+                    metadata: new Dictionary<string, string>
+                    {
+                        ["k"] = "second-k"
+                    })),
+            CreateOptions());
+
+        var chapters = new Processing.TranscriptChapterArtifactGenerator()
+            .Generate(chunkResult);
+
+        Assert.Equal(
+            [
+                ("segment-one", "k", "first-k"),
+                ("segment-one", "segment-two:k", "first-prefixed"),
+                ("segment-two", "k", "second-k")
+            ],
+            chapters.SelectMany(chapter => chapter.SourceMetadata).Select(
+                entry => (entry.SourceSegmentId, entry.Key, entry.Value)));
     }
 
     [Fact]
