@@ -1,5 +1,4 @@
 using Microsoft.AI.Foundry.Local;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AudioTranscriber.FoundryLocal;
 
@@ -9,6 +8,32 @@ namespace AudioTranscriber.FoundryLocal;
 /// </summary>
 public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
 {
+    private static readonly FoundryLocalManagerConfigurationRegistry
+        SharedManagerConfigurationRegistry =
+        new(new FoundryLocalManagerHost());
+    private static readonly FoundryLocalModelLeaseRegistry
+        SharedModelLeaseRegistry = new();
+
+    private readonly FoundryLocalManagerConfigurationRegistry managerConfigurationRegistry;
+    private readonly FoundryLocalModelLeaseRegistry modelLeaseRegistry;
+
+    public FoundryLocalSdkRuntime()
+        : this(
+            SharedManagerConfigurationRegistry,
+            SharedModelLeaseRegistry)
+    {
+    }
+
+    internal FoundryLocalSdkRuntime(
+        FoundryLocalManagerConfigurationRegistry managerConfigurationRegistry,
+        FoundryLocalModelLeaseRegistry modelLeaseRegistry)
+    {
+        this.managerConfigurationRegistry = managerConfigurationRegistry
+            ?? throw new ArgumentNullException(nameof(managerConfigurationRegistry));
+        this.modelLeaseRegistry = modelLeaseRegistry
+            ?? throw new ArgumentNullException(nameof(modelLeaseRegistry));
+    }
+
     public async Task<FoundryLocalReadiness> CheckReadinessAsync(
         FoundryLocalEnrichmentOptions options,
         CancellationToken cancellationToken = default)
@@ -19,19 +44,8 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
 
         try
         {
-            if (!FoundryLocalManager.IsInitialized)
-            {
-                await FoundryLocalManager
-                    .CreateAsync(
-                        new Configuration
-                        {
-                            AppName = options.ApplicationName,
-                            ModelCacheDir = options.ModelCacheDirectory
-                        },
-                        NullLogger.Instance,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            await EnsureManagerAsync(options, cancellationToken)
+                .ConfigureAwait(false);
 
             var catalog = await FoundryLocalManager.Instance
                 .GetCatalogAsync(cancellationToken)
@@ -115,6 +129,16 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
         {
             throw;
         }
+        catch (FoundryLocalProviderException exception)
+        {
+            return exception.Readiness
+                ?? new FoundryLocalReadiness(
+                    exception.DiagnosticCode,
+                    exception.ModelAlias,
+                    null,
+                    [],
+                    exception.Message);
+        }
         catch (FoundryLocalException exception)
         {
             return new FoundryLocalReadiness(
@@ -173,19 +197,8 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
 
         try
         {
-            if (!FoundryLocalManager.IsInitialized)
-            {
-                await FoundryLocalManager
-                    .CreateAsync(
-                        new Configuration
-                        {
-                            AppName = options.ApplicationName,
-                            ModelCacheDir = options.ModelCacheDirectory
-                        },
-                        NullLogger.Instance,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
+            await EnsureManagerAsync(options, cancellationToken)
+                .ConfigureAwait(false);
 
             var manager = FoundryLocalManager.Instance;
             var catalog = await manager
@@ -253,49 +266,61 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
                     .ConfigureAwait(false);
             }
 
-            if (!IsPresent(loadedModels, selected.Alias, selected.Id))
+            FoundryLocalModelLeaseRegistry.FoundryLocalModelLease? modelLease = null;
+            try
             {
-                await selected
-                    .LoadAsync(cancellationToken)
+                modelLease = await modelLeaseRegistry
+                    .AcquireAsync(
+                        new FoundryLocalSdkModelLifecycle(selected),
+                        cancellationToken)
                     .ConfigureAwait(false);
-            }
 
-            var refreshedCached = await catalog
-                .GetCachedModelsAsync(cancellationToken)
-                .ConfigureAwait(false);
-            var refreshedLoaded = await catalog
-                .GetLoadedModelsAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (!IsPresent(refreshedCached, selected.Alias, selected.Id) ||
-                !IsPresent(refreshedLoaded, selected.Alias, selected.Id))
+                var refreshedCached = await catalog
+                    .GetCachedModelsAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                var refreshedLoaded = await catalog
+                    .GetLoadedModelsAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (!IsPresent(refreshedCached, selected.Alias, selected.Id) ||
+                    !IsPresent(refreshedLoaded, selected.Alias, selected.Id))
+                {
+                    throw CreateFailure(
+                        FoundryLocalDiagnosticCode.ModelNotReady,
+                        options,
+                        $"Foundry Local model '{selected.Alias}' did not reach cached and loaded state.",
+                        CreateAvailability(
+                            catalogModels,
+                            refreshedCached,
+                            refreshedLoaded));
+                }
+
+                var modelPath = await selected
+                    .GetPathAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                return new FoundryLocalRuntimeSession(
+                    selected.Alias,
+                    selected.Id,
+                    endpoint: null,
+                    modelPath,
+                    new FoundryLocalSdkChatClient(selected),
+                    modelLease.DisposeAsync);
+            }
+            catch
             {
-                throw CreateFailure(
-                    FoundryLocalDiagnosticCode.ModelNotReady,
-                    options,
-                    $"Foundry Local model '{selected.Alias}' did not reach cached and loaded state.",
-                    CreateAvailability(
-                        catalogModels,
-                        refreshedCached,
-                        refreshedLoaded));
+                if (modelLease is not null)
+                {
+                    await modelLease.DisposeAsync().ConfigureAwait(false);
+                }
+
+                throw;
             }
-
-            var modelPath = await selected
-                .GetPathAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            return new FoundryLocalRuntimeSession(
-                selected.Alias,
-                selected.Id,
-                endpoint: null,
-                modelPath,
-                new FoundryLocalSdkChatClient(selected),
-                () => new ValueTask(
-                    selected.UnloadAsync(CancellationToken.None)));
         }
         catch (OperationCanceledException)
         {
             throw;
         }
+
         catch (FoundryLocalProviderException)
         {
             throw;
@@ -341,6 +366,13 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
                 innerException: exception);
         }
     }
+
+    private Task EnsureManagerAsync(
+        FoundryLocalEnrichmentOptions options,
+        CancellationToken cancellationToken) =>
+        managerConfigurationRegistry.EnsureCompatibleAsync(
+            options,
+            cancellationToken);
 
     private static IReadOnlyList<FoundryLocalModelAvailability> CreateAvailability(
         IEnumerable<IModel> catalog,

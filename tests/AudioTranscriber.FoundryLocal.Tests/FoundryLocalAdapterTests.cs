@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AudioTranscriber.FoundryLocal;
 using AudioTranscriber.TranscriptProcessing;
+using Microsoft.Extensions.AI;
 
 namespace AudioTranscriber.FoundryLocal.Tests;
 
@@ -289,6 +290,157 @@ public sealed class FoundryLocalAdapterTests
     }
 
     [Fact]
+    public async Task Dispose_waits_for_inflight_operations_and_is_idempotent()
+    {
+        var artifact = CreateArtifact(
+            Segment("blocking", 0, 1, 0, "segment-blocking"));
+        var started = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<string>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var chat = new FakeChatClient(
+            (_, _) =>
+            {
+                started.SetResult();
+                return release.Task;
+            });
+        var provider = new FoundryLocalEnrichmentProvider(
+            new FoundryLocalEnrichmentOptions("chosen-model"),
+            new FakeRuntime(chat));
+
+        var enrichment = provider.EnrichAsync(
+            new TranscriptChapterEnrichmentRequest(Assert.Single(artifact)))
+            .AsTask();
+        await started.Task;
+
+        var disposal = provider.DisposeAsync().AsTask();
+        var completed = await Task.WhenAny(
+            disposal,
+            Task.Delay(TimeSpan.FromMilliseconds(100)));
+        Assert.NotSame(disposal, completed);
+
+        release.SetResult(
+            ChapterResponse(Assert.Single(artifact), "completed after disposal request"));
+        await enrichment;
+        await disposal;
+        await provider.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => provider.EnrichAsync(
+                    new TranscriptChapterEnrichmentRequest(Assert.Single(artifact)))
+                .AsTask());
+    }
+
+    [Fact]
+    public void Cache_directory_validation_rejects_package_root_and_descendants()
+    {
+        var packageRoot = Path.GetFullPath(AppContext.BaseDirectory);
+        var descendant = Path.Combine(packageRoot, "external-cache");
+        var unrelated = Path.Combine(
+            Path.GetTempPath(),
+            $"audio-transcriber-foundry-{Guid.NewGuid():N}");
+
+        Assert.Throws<ArgumentException>(
+            () => new FoundryLocalEnrichmentOptions("model")
+            {
+                ModelCacheDirectory = packageRoot
+            }.Validate());
+        Assert.Throws<ArgumentException>(
+            () => new FoundryLocalEnrichmentOptions("model")
+            {
+                ModelCacheDirectory = descendant
+            }.Validate());
+        new FoundryLocalEnrichmentOptions("model")
+        {
+            ModelCacheDirectory = unrelated
+        }.Validate();
+    }
+
+    [Fact]
+    public async Task Model_leases_reference_count_adapter_loads_and_never_unloads_external_loads()
+    {
+        var registry = new FoundryLocalModelLeaseRegistry();
+        var model = new FakeModelLifecycle("model-id", isLoaded: false);
+
+        var first = await registry.AcquireAsync(model, CancellationToken.None);
+        var second = await registry.AcquireAsync(model, CancellationToken.None);
+        Assert.Equal(1, model.LoadCount);
+        Assert.Equal(0, model.UnloadCount);
+
+        await first.DisposeAsync();
+        Assert.Equal(0, model.UnloadCount);
+        await second.DisposeAsync();
+        Assert.Equal(1, model.UnloadCount);
+
+        var externallyLoaded = new FakeModelLifecycle("external-model", isLoaded: true);
+        var externalLease = await registry.AcquireAsync(
+            externallyLoaded,
+            CancellationToken.None);
+        await externalLease.DisposeAsync();
+        Assert.Equal(0, externallyLoaded.LoadCount);
+        Assert.Equal(0, externallyLoaded.UnloadCount);
+    }
+
+    [Fact]
+    public async Task Manager_configuration_is_serialized_and_conflicts_are_rejected()
+    {
+        var host = new FakeManagerHost();
+        var registry = new FoundryLocalManagerConfigurationRegistry(host);
+        var options = new FoundryLocalEnrichmentOptions("model")
+        {
+            ApplicationName = "app",
+            ModelCacheDirectory = Path.Combine(
+                Path.GetTempPath(),
+                "foundry-local-cache")
+        };
+
+        await Task.WhenAll(
+            Enumerable.Range(0, 8)
+                .Select(_ => registry.EnsureCompatibleAsync(
+                    options,
+                    CancellationToken.None)));
+        await registry.EnsureCompatibleAsync(options, CancellationToken.None);
+        Assert.Equal(1, host.InitializeCount);
+
+        var exception = await Assert.ThrowsAsync<FoundryLocalProviderException>(
+            () => registry.EnsureCompatibleAsync(
+                options with { ApplicationName = "different-app" },
+                CancellationToken.None));
+        Assert.Equal(
+            FoundryLocalDiagnosticCode.InvalidConfiguration,
+            exception.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task Manager_configuration_rejects_unverifiable_external_initialization()
+    {
+        var registry = new FoundryLocalManagerConfigurationRegistry(
+            new FakeManagerHost(isInitialized: true));
+
+        var exception = await Assert.ThrowsAsync<FoundryLocalProviderException>(
+            () => registry.EnsureCompatibleAsync(
+                new FoundryLocalEnrichmentOptions("model"),
+                CancellationToken.None));
+
+        Assert.Equal(
+            FoundryLocalDiagnosticCode.InvalidConfiguration,
+            exception.DiagnosticCode);
+    }
+
+    [Fact]
+    public void Transferred_request_items_are_not_disposed_by_the_transfer_helper()
+    {
+        var item = new TrackingDisposable();
+        var owner = new FakeRequestItemOwner<TrackingDisposable>();
+
+        FoundryLocalRequestOwnership.TransferToRequest(item, owner.Add);
+
+        Assert.Equal(0, item.DisposeCount);
+        owner.Dispose();
+        Assert.Equal(1, item.DisposeCount);
+    }
+
+    [Fact]
     public async Task Readiness_failures_are_exposed_without_cloud_fallback()
     {
         var artifact = CreateArtifact(
@@ -362,7 +514,7 @@ public sealed class FoundryLocalAdapterTests
                 new DeterministicEmbeddingProvider(),
                 new DeterministicScoringProvider())
             .Build(
-                document,
+                TranscriptIngestionAdapter.ToIngestionDocument(document),
                 new TranscriptChunkingOptions
                 {
                     MinimumDuration = TimeSpan.FromMilliseconds(500),
@@ -386,14 +538,27 @@ public sealed class FoundryLocalAdapterTests
             sourceId,
             id);
 
-    private sealed class DeterministicEmbeddingProvider : ITranscriptEmbeddingProvider
+    private sealed class DeterministicEmbeddingProvider
+        : IEmbeddingGenerator<TextContent, Embedding<float>>
     {
-        public ValueTask<TranscriptEmbeddingResponse> EmbedAsync(
-            TranscriptEmbeddingRequest request,
+        public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+            IEnumerable<TextContent> values,
+            EmbeddingGenerationOptions? options = null,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(new TranscriptEmbeddingResponse([1f]));
+            return Task.FromResult(
+                new GeneratedEmbeddings<Embedding<float>>(
+                [
+                    new Embedding<float>(new float[] { 1f })
+                ]));
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey) =>
+            serviceKey is null && serviceType.IsInstanceOfType(this) ? this : null;
+
+        public void Dispose()
+        {
         }
     }
 
@@ -405,6 +570,92 @@ public sealed class FoundryLocalAdapterTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return ValueTask.FromResult(1d);
+        }
+    }
+
+    private sealed class FakeManagerHost : IFoundryLocalManagerHost
+    {
+        public FakeManagerHost(bool isInitialized = false)
+        {
+            IsInitialized = isInitialized;
+        }
+
+        public bool IsInitialized { get; private set; }
+
+        public int InitializeCount { get; private set; }
+
+        public Task InitializeAsync(
+            FoundryLocalEnrichmentOptions options,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            InitializeCount++;
+            IsInitialized = true;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeModelLifecycle : IFoundryLocalModelLifecycle
+    {
+        private bool isLoaded;
+
+        public FakeModelLifecycle(string modelId, bool isLoaded)
+        {
+            ModelId = modelId;
+            this.isLoaded = isLoaded;
+        }
+
+        public string ModelId { get; }
+
+        public int LoadCount { get; private set; }
+
+        public int UnloadCount { get; private set; }
+
+        public Task<bool> IsLoadedAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(isLoaded);
+        }
+
+        public Task LoadAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LoadCount++;
+            isLoaded = true;
+            return Task.CompletedTask;
+        }
+
+        public Task UnloadAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            UnloadCount++;
+            isLoaded = false;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TrackingDisposable : IDisposable
+    {
+        public int DisposeCount { get; private set; }
+
+        public void Dispose() => DisposeCount++;
+    }
+
+    private sealed class FakeRequestItemOwner<TItem> : IDisposable
+        where TItem : IDisposable
+    {
+        private readonly List<TItem> items = [];
+
+        public void Add(TItem item) => items.Add(item);
+
+        public void Dispose()
+        {
+            foreach (var item in items)
+            {
+                item.Dispose();
+            }
+
+            items.Clear();
         }
     }
 

@@ -131,10 +131,22 @@ public sealed record FoundryLocalEnrichmentOptions
         if (ModelCacheDirectory is not null)
         {
             var cachePath = Path.GetFullPath(ModelCacheDirectory);
-            var packagePath = Path.GetFullPath(AppContext.BaseDirectory)
-                .TrimEnd(Path.DirectorySeparatorChar) +
-                Path.DirectorySeparatorChar;
-            if (cachePath.StartsWith(packagePath, StringComparison.OrdinalIgnoreCase))
+            var packagePath = Path.GetFullPath(AppContext.BaseDirectory);
+            var normalizedCachePath = NormalizeDirectoryPath(cachePath);
+            var normalizedPackagePath = NormalizeDirectoryPath(packagePath);
+            var comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (string.Equals(
+                    normalizedCachePath,
+                    normalizedPackagePath,
+                    comparison) ||
+                normalizedCachePath.StartsWith(
+                    normalizedPackagePath + Path.DirectorySeparatorChar,
+                    comparison) ||
+                normalizedCachePath.StartsWith(
+                    normalizedPackagePath + Path.AltDirectorySeparatorChar,
+                    comparison))
             {
                 throw new ArgumentException(
                     "The Foundry Local model cache must be external to the application package.",
@@ -160,6 +172,25 @@ public sealed record FoundryLocalEnrichmentOptions
                 nameof(Temperature),
                 "Temperature must be finite and between zero and two.");
         }
+    }
+
+    private static string NormalizeDirectoryPath(string path)
+    {
+        var root = Path.GetPathRoot(path);
+        if (!string.IsNullOrEmpty(root) &&
+            string.Equals(
+                path,
+                root,
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal))
+        {
+            return root;
+        }
+
+        return path.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar);
     }
 
     private static string RequireText(string value, string parameterName) =>

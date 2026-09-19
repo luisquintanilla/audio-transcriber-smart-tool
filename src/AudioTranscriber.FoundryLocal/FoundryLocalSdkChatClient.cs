@@ -46,7 +46,7 @@ public sealed class FoundryLocalSdkChatClient : IFoundryLocalChatClient
         using var nativeRequest = new Request();
         foreach (var message in request.Messages)
         {
-            using var item = message.Role switch
+            var item = message.Role switch
             {
                 "system" => MessageItem.System(message.Content),
                 "user" => MessageItem.User(message.Content),
@@ -55,7 +55,9 @@ public sealed class FoundryLocalSdkChatClient : IFoundryLocalChatClient
                     $"Unsupported chat role '{message.Role}'.",
                     nameof(request))
             };
-            nativeRequest.AddItem(item);
+            FoundryLocalRequestOwnership.TransferToRequest(
+                item,
+                itemToAdd => nativeRequest.AddItem(itemToAdd));
         }
 
         try

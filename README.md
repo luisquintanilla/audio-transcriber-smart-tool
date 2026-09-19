@@ -452,3 +452,12 @@ not download models or require a running local service. The opt-in test is
 enabled with `AUDIO_TRANSCRIBER_FOUNDRY_LOCAL_MODEL`; if that explicitly
 requested runtime or model is unavailable, it fails with the readiness
 diagnostic rather than falling back elsewhere.
+
+The adapter coordinates disposal with active enrichment calls and makes
+repeated/concurrent disposal safe. It tracks model-load ownership across
+adapter instances: a model that was already loaded by another caller is
+borrowed and is not unloaded by this provider, while adapter-acquired loads
+are reference-counted and unloaded only after the final lease is released.
+Because `FoundryLocalManager` is process-global, the adapter serializes
+initialization and rejects incompatible application/cache configuration or
+unverifiable external initialization instead of silently reusing it.

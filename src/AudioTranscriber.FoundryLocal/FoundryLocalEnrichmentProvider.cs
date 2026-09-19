@@ -11,8 +11,14 @@ public sealed class FoundryLocalEnrichmentProvider
 {
     private readonly FoundryLocalEnrichmentOptions options;
     private readonly IFoundryLocalRuntime runtime;
-    private readonly SemaphoreSlim sessionGate = new(1, 1);
+    private readonly object lifecycleGate = new();
+    private readonly TaskCompletionSource disposalCompletion =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private FoundryLocalRuntimeSession? session;
+    private Task<FoundryLocalRuntimeSession>? sessionInitialization;
+    private int activeOperations;
+    private bool disposeRequested;
+    private bool finalizationStarted;
 
     public FoundryLocalEnrichmentProvider(
         FoundryLocalEnrichmentOptions options,
@@ -62,7 +68,9 @@ public sealed class FoundryLocalEnrichmentProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var runtimeSession = await GetSessionAsync(cancellationToken).ConfigureAwait(false);
+        await using var operation = await AcquireOperationAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var runtimeSession = operation.Session;
         var chatRequest = new FoundryLocalChatRequest(
             runtimeSession.ModelId,
             FoundryLocalPromptBuilder.BuildChapterPrompt(request.Chapter),
@@ -84,7 +92,9 @@ public sealed class FoundryLocalEnrichmentProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var runtimeSession = await GetSessionAsync(cancellationToken).ConfigureAwait(false);
+        await using var operation = await AcquireOperationAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var runtimeSession = operation.Session;
         var chatRequest = new FoundryLocalChatRequest(
             runtimeSession.ModelId,
             FoundryLocalPromptBuilder.BuildOverallPrompt(request),
@@ -101,45 +111,170 @@ public sealed class FoundryLocalEnrichmentProvider
 
     public async ValueTask DisposeAsync()
     {
-        FoundryLocalRuntimeSession? current;
-        await sessionGate.WaitAsync().ConfigureAwait(false);
+        var startFinalization = false;
         try
         {
-            current = session;
-            session = null;
-        }
-        finally
-        {
-            sessionGate.Release();
-        }
+            lock (lifecycleGate)
+            {
+                disposeRequested = true;
+                if (!finalizationStarted && activeOperations == 0)
+                {
+                    finalizationStarted = true;
+                    startFinalization = true;
+                }
+            }
 
-        if (current is not null)
-        {
-            await current.DisposeAsync().ConfigureAwait(false);
-        }
+            if (startFinalization)
+            {
+                _ = FinalizeDisposeAsync();
+            }
 
-        sessionGate.Dispose();
+            await disposalCompletion.Task.ConfigureAwait(false);
+        }
+        catch
+        {
+            throw;
+        }
     }
 
-    private async Task<FoundryLocalRuntimeSession> GetSessionAsync(
+    private async Task<FoundryLocalOperationLease> AcquireOperationAsync(
         CancellationToken cancellationToken)
     {
-        if (session is not null)
+        Task<FoundryLocalRuntimeSession>? initialization;
+        lock (lifecycleGate)
         {
-            return session;
+            if (disposeRequested)
+            {
+                throw new ObjectDisposedException(GetType().Name);
+            }
+
+            activeOperations++;
+            if (session is not null)
+            {
+                return new FoundryLocalOperationLease(
+                    session,
+                    ReleaseOperation);
+            }
+
+            initialization = sessionInitialization ??= InitializeSessionAsync(
+                cancellationToken);
         }
 
-        await sessionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            session ??= await runtime
-                .PrepareAsync(options, cancellationToken)
+            var prepared = await initialization
+                .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
+            return new FoundryLocalOperationLease(
+                prepared,
+                ReleaseOperation);
+        }
+        catch
+        {
+            ReleaseOperation();
+            throw;
+        }
+    }
+
+    private async Task<FoundryLocalRuntimeSession> InitializeSessionAsync(
+        CancellationToken cancellationToken)
+    {
+        var prepared = await runtime
+            .PrepareAsync(options, cancellationToken)
+            .ConfigureAwait(false);
+        lock (lifecycleGate)
+        {
+            session ??= prepared;
             return session;
         }
-        finally
+    }
+
+    private void ReleaseOperation()
+    {
+        var startFinalization = false;
+        lock (lifecycleGate)
         {
-            sessionGate.Release();
+            activeOperations--;
+            if (disposeRequested &&
+                activeOperations == 0 &&
+                !finalizationStarted)
+            {
+                finalizationStarted = true;
+                startFinalization = true;
+            }
+        }
+
+        if (startFinalization)
+        {
+            _ = FinalizeDisposeAsync();
+        }
+    }
+
+    private async Task FinalizeDisposeAsync()
+    {
+        try
+        {
+            Task<FoundryLocalRuntimeSession>? initialization;
+            lock (lifecycleGate)
+            {
+                initialization = sessionInitialization;
+            }
+
+            if (initialization is not null)
+            {
+                try
+                {
+                    await initialization.ConfigureAwait(false);
+                }
+                catch
+                {
+                    // A failed initialization leaves no runtime session to dispose.
+                }
+            }
+
+            FoundryLocalRuntimeSession? current;
+            lock (lifecycleGate)
+            {
+                current = session;
+                session = null;
+            }
+
+            if (current is not null)
+            {
+                await current.DisposeAsync().ConfigureAwait(false);
+            }
+
+            disposalCompletion.TrySetResult();
+        }
+        catch (Exception exception)
+        {
+            disposalCompletion.TrySetException(exception);
+        }
+    }
+
+    private sealed class FoundryLocalOperationLease : IAsyncDisposable
+    {
+        private readonly Action release;
+        private int released;
+
+        public FoundryLocalOperationLease(
+            FoundryLocalRuntimeSession session,
+            Action release)
+        {
+            Session = session;
+            this.release = release;
+        }
+
+        public FoundryLocalRuntimeSession Session { get; }
+
+        public ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref released, 1) == 0)
+            {
+                release();
+            }
+
+            return ValueTask.CompletedTask;
         }
     }
 }
