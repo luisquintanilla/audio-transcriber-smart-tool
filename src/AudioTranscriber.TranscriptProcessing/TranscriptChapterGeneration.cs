@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
-using System.Numerics.Tensors;
 using System.Text;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DataIngestion;
@@ -342,7 +341,9 @@ public sealed class TranscriptChapterGenerator
                     "The selected chapter provider did not return an embedding.");
             }
 
-            var magnitude = TensorPrimitives.Norm(request.Embedding.Vector.Span);
+            var magnitude = Math.Sqrt(
+                request.Embedding.Vector.ToArray()
+                    .Sum(value => value * (double)value));
             return ValueTask.FromResult(double.IsFinite(magnitude) ? magnitude : 0d);
         }
     }
