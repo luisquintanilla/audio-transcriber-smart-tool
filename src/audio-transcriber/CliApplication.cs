@@ -9,6 +9,11 @@ namespace AudioTranscriber.Cli;
 
 public sealed class CliApplication
 {
+    private static readonly StringComparison FilePathComparison =
+        OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
     private readonly ITranscriptionEngine _engine;
     private readonly WavAudioReader _audioReader;
     private readonly IAudioConversionService _conversionService;
@@ -303,7 +308,7 @@ public sealed class CliApplication
         string inputPath,
         string outputPath)
     {
-        if (string.Equals(inputPath, outputPath, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(inputPath, outputPath, FilePathComparison))
         {
             return true;
         }
@@ -313,7 +318,7 @@ public sealed class CliApplication
         return string.Equals(
             ResolveLinkTargetPath(input),
             ResolveLinkTargetPath(output),
-            StringComparison.OrdinalIgnoreCase);
+            FilePathComparison);
     }
 
     private static string ResolveLinkTargetPath(FileInfo file) =>
