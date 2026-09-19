@@ -22,7 +22,8 @@ internal sealed class FoundryLocalManagerHost : IFoundryLocalManagerHost
         FoundryLocalManager.CreateAsync(
             new Configuration
             {
-                AppName = options.ApplicationName,
+                AppName = FoundryLocalManagerConfigurationRegistry
+                    .NormalizeApplicationName(options.ApplicationName),
                 ModelCacheDir = options.ModelCacheDirectory
             },
             NullLogger.Instance,
@@ -98,7 +99,7 @@ internal sealed class FoundryLocalManagerConfigurationRegistry
         public static FoundryLocalManagerConfiguration From(
             FoundryLocalEnrichmentOptions options) =>
             new(
-                options.ApplicationName.Trim(),
+                NormalizeApplicationName(options.ApplicationName),
                 NormalizeDirectory(options.ModelCacheDirectory));
 
         private static string? NormalizeDirectory(string? path)
@@ -126,6 +127,9 @@ internal sealed class FoundryLocalManagerConfigurationRegistry
                 ? StringComparison.OrdinalIgnoreCase
                 : StringComparison.Ordinal;
     }
+
+    internal static string NormalizeApplicationName(string applicationName) =>
+        applicationName.Trim();
 }
 
 internal interface IFoundryLocalModelLifecycle

@@ -587,6 +587,31 @@ public sealed class FoundryLocalAdapterTests
     }
 
     [Fact]
+    public void Manager_application_names_use_the_same_normalized_value()
+    {
+        Assert.Equal(
+            "audio-transcriber",
+            FoundryLocalManagerConfigurationRegistry.NormalizeApplicationName(
+                " audio-transcriber "));
+    }
+
+    [Fact]
+    public void Model_selection_accepts_a_catalog_variant_id()
+    {
+        var variant = new FakeCatalogModel("variant-id", "model-variant");
+        var model = new FakeCatalogModel(
+            "default-id",
+            "model",
+            [variant]);
+
+        var selected = FoundryLocalSdkRuntime.FindModel(
+            [model],
+            "variant-id");
+
+        Assert.Same(variant, selected);
+    }
+
+    [Fact]
     public void Transferred_request_items_are_not_disposed_by_the_transfer_helper()
     {
         var item = new TrackingDisposable();
@@ -863,6 +888,68 @@ public sealed class FoundryLocalAdapterTests
             }
 
             isLoaded = false;
+        }
+    }
+
+    private sealed class FakeCatalogModel : Microsoft.AI.Foundry.Local.IModel
+    {
+        public FakeCatalogModel(
+            string id,
+            string alias,
+            IReadOnlyList<Microsoft.AI.Foundry.Local.IModel>? variants = null)
+        {
+            Id = id;
+            Alias = alias;
+            Variants = variants ?? [];
+        }
+
+        public string Id { get; }
+
+        public string Alias { get; }
+
+        public Microsoft.AI.Foundry.Local.ModelInfo Info =>
+            throw new NotSupportedException();
+
+        public IReadOnlyList<Microsoft.AI.Foundry.Local.IModel> Variants { get; }
+
+        public Task<bool> IsCachedAsync(CancellationToken? ct = null) =>
+            Task.FromResult(false);
+
+        public Task<bool> IsLoadedAsync(CancellationToken? ct = null) =>
+            Task.FromResult(false);
+
+        public Task DownloadAsync(
+            Action<float>? downloadProgress = null,
+            CancellationToken? ct = null) =>
+            Task.CompletedTask;
+
+        public Task<string> GetPathAsync(CancellationToken? ct = null) =>
+            Task.FromResult(string.Empty);
+
+        public Task LoadAsync(CancellationToken? ct = null) => Task.CompletedTask;
+
+        public Task RemoveFromCacheAsync(CancellationToken? ct = null) =>
+            Task.CompletedTask;
+
+        public Task UnloadAsync(CancellationToken? ct = null) => Task.CompletedTask;
+
+        public Task<Microsoft.AI.Foundry.Local.OpenAIChatClient> GetChatClientAsync(
+            CancellationToken? ct = null) =>
+            Task.FromException<Microsoft.AI.Foundry.Local.OpenAIChatClient>(
+                new NotSupportedException());
+
+        public Task<Microsoft.AI.Foundry.Local.OpenAIAudioClient> GetAudioClientAsync(
+            CancellationToken? ct = null) =>
+            Task.FromException<Microsoft.AI.Foundry.Local.OpenAIAudioClient>(
+                new NotSupportedException());
+
+        public Task<Microsoft.AI.Foundry.Local.OpenAIEmbeddingClient>
+            GetEmbeddingClientAsync(CancellationToken? ct = null) =>
+            Task.FromException<Microsoft.AI.Foundry.Local.OpenAIEmbeddingClient>(
+                new NotSupportedException());
+
+        public void SelectVariant(Microsoft.AI.Foundry.Local.IModel variant)
+        {
         }
     }
 

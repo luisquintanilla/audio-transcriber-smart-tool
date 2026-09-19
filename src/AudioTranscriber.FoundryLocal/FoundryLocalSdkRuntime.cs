@@ -63,15 +63,7 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
                 catalogModels,
                 cachedModels,
                 loadedModels);
-            var selected = catalogModels.FirstOrDefault(
-                model => string.Equals(
-                             model.Alias,
-                             options.ModelAlias,
-                             StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(
-                             model.Id,
-                             options.ModelAlias,
-                             StringComparison.OrdinalIgnoreCase));
+            var selected = FindModel(catalogModels, options.ModelAlias);
             if (selected is null)
             {
                 return new FoundryLocalReadiness(
@@ -217,15 +209,7 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
                 catalogModels,
                 cachedModels,
                 loadedModels);
-            var selected = catalogModels.FirstOrDefault(
-                model => string.Equals(
-                             model.Alias,
-                             options.ModelAlias,
-                             StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(
-                             model.Id,
-                             options.ModelAlias,
-                             StringComparison.OrdinalIgnoreCase));
+            var selected = FindModel(catalogModels, options.ModelAlias);
             if (selected is null)
             {
                 throw CreateFailure(
@@ -415,6 +399,21 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
             model.Info.Task,
             "vision-language-chat",
             StringComparison.Ordinal);
+
+    internal static IModel? FindModel(
+        IEnumerable<IModel> models,
+        string aliasOrId) =>
+        models
+            .SelectMany(model => new[] { model }.Concat(model.Variants))
+            .FirstOrDefault(
+                model => string.Equals(
+                             model.Alias,
+                             aliasOrId,
+                             StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(
+                             model.Id,
+                             aliasOrId,
+                             StringComparison.OrdinalIgnoreCase));
 
     private static IEnumerable<string> ModelKeys(IModel model)
     {
