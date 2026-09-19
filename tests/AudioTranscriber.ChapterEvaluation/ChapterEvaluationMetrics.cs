@@ -328,6 +328,7 @@ public static class ChapterEvaluationMetricCalculator
 
             if (!sourceSegments.SequenceEqual(
                     sourceSegments.OrderBy(segment => segment.OriginalOrdinal)) ||
+                !HasContiguousSourceSegments(sourceSegments) ||
                 prediction.Start != sourceSegments[0].Start ||
                 prediction.End != sourceSegments[^1].End)
             {
@@ -416,6 +417,23 @@ public static class ChapterEvaluationMetricCalculator
         }
 
         sourceSegments = values.ToArray();
+        return true;
+    }
+
+    private static bool HasContiguousSourceSegments(
+        IReadOnlyList<TranscriptSegment> sourceSegments)
+    {
+        for (var index = 1; index < sourceSegments.Count; index++)
+        {
+            var previous = sourceSegments[index - 1];
+            var current = sourceSegments[index];
+            if (current.OriginalOrdinal - (long)previous.OriginalOrdinal != 1 ||
+                current.Start != previous.End)
+            {
+                return false;
+            }
+        }
+
         return true;
     }
 

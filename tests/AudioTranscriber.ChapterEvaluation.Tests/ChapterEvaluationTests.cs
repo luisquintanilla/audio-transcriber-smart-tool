@@ -324,6 +324,29 @@ public sealed class ChapterEvaluationTests
     }
 
     [Fact]
+    public void Metrics_RejectPredictionThatSkipsSourceSegmentWithOuterTimestamps()
+    {
+        var fixture = LoadFixture("product-launch.json");
+        var predictions = new[]
+        {
+            new ChapterEvaluationPrediction(
+                "skips-segment",
+                TimeSpan.Zero,
+                TimeSpan.FromSeconds(15),
+                new[] { "seg-001", "seg-003" }),
+            new ChapterEvaluationPrediction(
+                "remaining",
+                TimeSpan.FromSeconds(15),
+                TimeSpan.FromSeconds(30),
+                new[] { "seg-004", "seg-005", "seg-006" })
+        };
+
+        var metrics = ChapterEvaluationMetricCalculator.Evaluate(fixture, predictions);
+
+        Assert.Equal(1, metrics.TimestampSemanticViolationCount);
+    }
+
+    [Fact]
     public async Task Report_FormatsGateFailuresClearly()
     {
         var fixture = LoadFixture("product-launch.json");
