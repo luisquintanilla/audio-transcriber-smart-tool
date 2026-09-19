@@ -52,7 +52,7 @@ public sealed class ChapterEnrichmentTests
                     IncludeOverallSummary = true
                 });
 
-        var json = JsonDocument.Parse(
+        using var json = JsonDocument.Parse(
             new Processing.TranscriptChapterEnrichmentArtifactSerializer()
                 .Serialize(document));
         var root = json.RootElement;
@@ -201,14 +201,36 @@ public sealed class ChapterEnrichmentTests
                     {
                         ProviderConfiguration = new Dictionary<string, string>
                         {
-                            [" duplicate "] = "first",
-                            ["duplicate"] = "second"
+                            ["duplicate"] = "first",
+                            [" duplicate "] = "second"
                         }
                     }));
 
         Assert.Equal("ProviderConfiguration", exception.ParamName);
         Assert.Contains("duplicate", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "' duplicate '",
+            exception.Message,
+            StringComparison.Ordinal);
         Assert.Equal(0, enricher.CallCount);
+
+        var metadataException = Assert.Throws<ArgumentException>(
+            () => new Processing.TranscriptChapterEnrichmentGenerationMetadata(
+                "algorithm",
+                "provider",
+                configuration: new Dictionary<string, string>
+                {
+                    ["duplicate"] = "first",
+                    [" duplicate "] = "second"
+                }));
+        Assert.Contains(
+            "Duplicate enrichment configuration key 'duplicate'.",
+            metadataException.Message,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "' duplicate '",
+            metadataException.Message,
+            StringComparison.Ordinal);
     }
 
     [Fact]

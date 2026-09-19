@@ -191,3 +191,15 @@ worktree is clean.
   pre-existing opt-in Whisper smoke test skipped; 0 failed.
 - `dotnet list .\AudioTranscriber.sln package --include-transitive`: passed.
 - Release library and CLI packs succeeded.
+
+# Chapter enrichment re-review follow-up
+
+Both new active threads were valid and accepted:
+
+| Thread | Evidence/action |
+|---|---|
+| Duplicate-key diagnostics should report the trimmed normalized key | `TranscriptChapterEnrichmentGenerationMetadata` now computes `normalizedKey` once for both uniqueness and the exception message; `Options_reject_provider_configuration_keys_that_collide_after_trimming` verifies both constructors and rejects the untrimmed form. |
+| `JsonDocument` should be disposed deterministically in the test | All three `JsonDocument.Parse` instances in `ChapterEnrichmentTests` now use `using var`. |
+
+No invalid or deferred threads; no issue was required. The two new threads are
+ready to reply/resolve after the review-fix commit is pushed.

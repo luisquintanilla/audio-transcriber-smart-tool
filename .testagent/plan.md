@@ -435,6 +435,11 @@ replays the enrichment commit and keeps its provider-neutral boundaries.
    `Enrichment_writer_serializes_valid_utf8_without_full_byte_array_duplication`
    verifies bytes/schema and atomic output behavior without coupling to a
    private implementation detail.
+3. Report the trimmed normalized key in duplicate-configuration diagnostics;
+   `Options_reject_provider_configuration_keys_that_collide_after_trimming`
+   covers both options and generation-metadata constructors.
+4. Dispose parsed `JsonDocument` instances deterministically with `using var`
+   in `ChapterEnrichmentTests`.
 
 ## Validation
 
