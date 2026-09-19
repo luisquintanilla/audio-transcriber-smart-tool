@@ -35,8 +35,7 @@ public sealed class GraniteSentencePieceTokenizer : IGraniteTokenizer, IDisposab
             throw new GraniteModelAssetException(
                 GraniteDiagnosticCode.IncompatibleAsset,
                 GraniteAssetKind.Tokenizer,
-                "The pinned Granite tokenizer asset is incompatible with SentencePiece.",
-                innerException: exception);
+                "The pinned Granite tokenizer asset is incompatible with SentencePiece.");
         }
 
         if (maxTokens <= 0)
@@ -101,8 +100,7 @@ public sealed class GraniteOnnxInferenceRuntime : IGraniteInferenceRuntime, IDis
 
         try
         {
-            session = new InferenceSession(modelPath);
-            ValidateInputs(session);
+            session = CreateSession(modelPath);
         }
         catch (GraniteModelAssetException)
         {
@@ -121,8 +119,7 @@ public sealed class GraniteOnnxInferenceRuntime : IGraniteInferenceRuntime, IDis
             throw new GraniteModelAssetException(
                 GraniteDiagnosticCode.IncompatibleAsset,
                 GraniteAssetKind.Model,
-                "The pinned Granite ONNX model asset is incompatible with the configured ONNX Runtime.",
-                innerException: exception);
+                "The pinned Granite ONNX model asset is incompatible with the configured ONNX Runtime.");
         }
     }
 
@@ -189,12 +186,26 @@ public sealed class GraniteOnnxInferenceRuntime : IGraniteInferenceRuntime, IDis
             throw new GraniteModelAssetException(
                 GraniteDiagnosticCode.IncompatibleAsset,
                 GraniteAssetKind.Model,
-                "The Granite ONNX model could not produce a compatible hidden-state tensor.",
-                innerException: exception);
+                "The Granite ONNX model could not produce a compatible hidden-state tensor.");
         }
     }
 
     public void Dispose() => session.Dispose();
+
+    private static InferenceSession CreateSession(string modelPath)
+    {
+        var candidate = new InferenceSession(modelPath);
+        try
+        {
+            ValidateInputs(candidate);
+            return candidate;
+        }
+        catch
+        {
+            candidate.Dispose();
+            throw;
+        }
+    }
 
     private static void ValidateInputs(InferenceSession session)
     {

@@ -39,6 +39,24 @@ public sealed class GraniteRuntimeTests
     }
 
     [Fact]
+    public void Runtime_IncompatibleModelReportsRedactedDiagnostic()
+    {
+        using var temporary = new GraniteTestDirectory();
+        var modelPath = Path.Combine(temporary.Path, "invalid-model.onnx");
+        File.WriteAllBytes(modelPath, [1, 2, 3]);
+
+        var exception = Assert.Throws<GraniteModelAssetException>(
+            () => new GraniteOnnxInferenceRuntime(modelPath));
+
+        Assert.Equal(GraniteDiagnosticCode.IncompatibleAsset, exception.DiagnosticCode);
+        Assert.Null(exception.InnerException);
+        Assert.DoesNotContain(
+            modelPath,
+            exception.ToString(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void FakeRuntime_UsesClsPooling()
     {
         var output = new GraniteInferenceOutput(
