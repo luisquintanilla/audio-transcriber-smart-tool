@@ -599,6 +599,38 @@ public sealed class ChapterEvaluationTests
     }
 
     [Fact]
+    public void FixtureLoader_ParsesFractionalSeconds()
+    {
+        var fixture = LoadInlineFixture(
+            new[]
+            {
+                new
+                {
+                    id = "seg-1",
+                    ordinal = 0,
+                    start = "00:00:00",
+                    end = "00:00:01.5",
+                    text = "one"
+                }
+            },
+            new[]
+            {
+                new
+                {
+                    id = "chapter-1",
+                    label = "One",
+                    start = "00:00:00",
+                    end = "00:00:01.5",
+                    sourceSegmentIds = new[] { "seg-1" }
+                }
+            });
+
+        Assert.Equal(
+            TimeSpan.FromSeconds(1.5),
+            fixture.Transcript.Segments[0].End);
+    }
+
+    [Fact]
     public void FixtureLoader_RejectsOutOfRangeTimestamps()
     {
         var exception = Assert.Throws<InvalidDataException>(
