@@ -85,6 +85,24 @@ public sealed class GraniteProviderBehaviorTests
     }
 
     [Fact]
+    public async Task Provider_RejectsUnsupportedRequestedDimensions()
+    {
+        using var temporary = new GraniteTestDirectory();
+        using var provider = new GraniteEmbeddingProvider(
+            new GraniteModelConfiguration(temporary.Path),
+            new FixedGraniteTokenizer(),
+            new CountingGraniteRuntime());
+
+        var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => provider.GenerateAsync(
+                [new TextContent("unsupported dimensions")],
+                new EmbeddingGenerationOptions { Dimensions = 384 }));
+
+        Assert.Equal("options", exception.ParamName);
+        Assert.Contains("768", exception.Message);
+    }
+
+    [Fact]
     public void Provider_ImplementsStandardEmbeddingGeneratorContract()
     {
         using var temporary = new GraniteTestDirectory();

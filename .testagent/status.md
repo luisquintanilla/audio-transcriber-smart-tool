@@ -148,8 +148,8 @@ by this PR:
 - The four accepted review regressions remain covered: permission-denied
   diagnostics, shared cache coordination and overwrite-safe publication,
   path-redacted exception text, and disposal-safe ONNX session construction.
-- Final Release focused Granite tests passed 26/26; full Release solution tests
-  passed 231 with one pre-existing opt-in Whisper smoke test skipped.
+- Final Release focused Granite tests passed 28/28; full Release solution tests
+  passed 233 with one pre-existing opt-in Whisper smoke test skipped.
 - Release package smoke passed with no model/tokenizer assets. Granite's only
   runtime package references are `Microsoft.ML.OnnxRuntime` 1.30.0,
   `Microsoft.ML.Tokenizers` 2.0.0, and `System.Numerics.Tensors` 10.0.12;

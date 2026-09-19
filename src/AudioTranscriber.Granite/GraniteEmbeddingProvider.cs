@@ -67,6 +67,14 @@ public sealed class GraniteEmbeddingProvider :
     {
         ArgumentNullException.ThrowIfNull(values);
         cancellationToken.ThrowIfCancellationRequested();
+        if (options?.Dimensions is int dimensions &&
+            dimensions != GraniteModelMetadata.EmbeddingDimensions)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                dimensions,
+                $"Granite embeddings support exactly {GraniteModelMetadata.EmbeddingDimensions} dimensions.");
+        }
 
         var inputs = values.ToArray();
         var embeddings = new GeneratedEmbeddings<Embedding<float>>(inputs.Length);

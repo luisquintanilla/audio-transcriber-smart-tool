@@ -126,7 +126,9 @@ public sealed class GraniteOnnxInferenceRuntime : IGraniteInferenceRuntime, IDis
             DllNotFoundException or
             EntryPointNotFoundException or
             BadImageFormatException or
-            TypeInitializationException)
+            TypeInitializationException or
+            UnauthorizedAccessException or
+            System.Security.SecurityException)
         {
             throw new GraniteModelAssetException(
                 GraniteDiagnosticCode.IncompatibleAsset,
