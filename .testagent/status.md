@@ -163,3 +163,43 @@ The identical input/output path review is valid. The guard is implemented at
 the CLI boundary before overwrite checks and input reads, with regression
 coverage for both default and `--overwrite` modes. No lower PR files or
 abstractions were changed.
+
+# Chapter enrichment review follow-up
+
+## Thread classifications
+
+| Live thread | Classification | Evidence/action |
+|---|---|---|
+| Trimmed provider-configuration key collisions | Valid; accepted | Added explicit duplicate-after-trim rejection and focused regression `Options_reject_provider_configuration_keys_that_collide_after_trimming`. |
+| Full-document string plus byte-array allocation | Valid; accepted | Reworked the writer to stream deterministic UTF-8 JSON directly to the temporary file and added `Enrichment_writer_serializes_valid_utf8_without_full_byte_array_duplication`, which asserts output bytes/schema and atomic behavior rather than implementation details. |
+
+No thread was invalid or deferred, so no shovel-ready issue was required.
+
+## Required validation after rebase
+
+Run focused and full Release tests, restore/build with 0 warnings/errors,
+package graph/pack checks, and `git diff --check`. Reply to and resolve both
+accepted inline threads only after the rebased commit is pushed and the
+worktree is clean.
+
+## Review-fix validation
+
+- Focused Release enrichment tests: 10 passed, 0 failed.
+- `dotnet restore .\AudioTranscriber.sln --configfile .\NuGet.config --verbosity minimal`: passed.
+- Release solution build: 0 warnings, 0 errors.
+- Release solution tests: 254 core tests plus 15 evaluation tests passed; 1
+  pre-existing opt-in Whisper smoke test skipped; 0 failed.
+- `dotnet list .\AudioTranscriber.sln package --include-transitive`: passed.
+- Release library and CLI packs succeeded.
+
+# Chapter enrichment re-review follow-up
+
+Both new active threads were valid and accepted:
+
+| Thread | Evidence/action |
+|---|---|
+| Duplicate-key diagnostics should report the trimmed normalized key | `TranscriptChapterEnrichmentGenerationMetadata` now computes `normalizedKey` once for both uniqueness and the exception message; `Options_reject_provider_configuration_keys_that_collide_after_trimming` verifies both constructors and rejects the untrimmed form. |
+| `JsonDocument` should be disposed deterministically in the test | All three `JsonDocument.Parse` instances in `ChapterEnrichmentTests` now use `using var`. |
+
+No invalid or deferred threads; no issue was required. The two new threads are
+ready to reply/resolve after the review-fix commit is pushed.
