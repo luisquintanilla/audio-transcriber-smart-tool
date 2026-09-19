@@ -226,7 +226,10 @@ public static class GraniteCachePathResolver
                 "granite-embedding-278m-multilingual",
                 GraniteModelMetadata.Revision));
 
-        if (!string.IsNullOrWhiteSpace(repositoryRoot) && IsWithin(path, repositoryRoot))
+        if (!string.IsNullOrWhiteSpace(repositoryRoot) &&
+            IsWithin(
+                ResolveExistingDirectoryLinks(path),
+                ResolveExistingDirectoryLinks(repositoryRoot)))
         {
             throw new ArgumentException(
                 "Granite model assets must be cached outside the repository.",
@@ -246,6 +249,27 @@ public static class GraniteCachePathResolver
 
         return string.Equals(fullPath, fullRoot, StringComparison.OrdinalIgnoreCase) ||
             fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveExistingDirectoryLinks(string path)
+    {
+        var directory = new DirectoryInfo(Path.GetFullPath(path));
+        var components = new Stack<string>();
+        for (var current = directory; current.Parent is not null; current = current.Parent)
+        {
+            components.Push(current.Name);
+        }
+
+        var resolved = directory.Root;
+        while (components.Count > 0)
+        {
+            var candidate = new DirectoryInfo(
+                Path.Combine(resolved.FullName, components.Pop()));
+            resolved = candidate.ResolveLinkTarget(returnFinalTarget: true)
+                as DirectoryInfo ?? candidate;
+        }
+
+        return resolved.FullName;
     }
 }
 

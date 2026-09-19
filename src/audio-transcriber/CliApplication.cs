@@ -9,8 +9,10 @@ namespace AudioTranscriber.Cli;
 
 public sealed class CliApplication
 {
-    private const StringComparison FilePathComparison =
-        StringComparison.OrdinalIgnoreCase;
+    private static readonly StringComparison FilePathComparison =
+        OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
 
     private readonly ITranscriptionEngine _engine;
     private readonly WavAudioReader _audioReader;
