@@ -301,6 +301,44 @@ asynchronously evaluated chapters contain their numeric model score. No
 embedding implementation, model asset, network dependency, CLI capability, or
 Smart Tool manifest entry is required.
 
+### Deterministic chapter evaluation harness
+
+`tests/AudioTranscriber.ChapterEvaluation` is a non-packable, fixture-driven
+harness for measuring chapter quality without changing the Smart Tool or core
+package. Its labeled JSON fixtures preserve source segment IDs and exact
+`TimeSpan` boundaries. The default harness injects deterministic fake embedding
+and scoring providers; it never downloads models, invokes Whisper, or loads
+Granite assets. A caller can provide another implementation of the existing
+transcript-processing seams for an explicitly managed benchmark without making
+that runtime part of the normal test path.
+
+The harness reports boundary precision, recall, and F1 using a documented
+two-second one-to-one matching tolerance. Boundaries are sorted before an
+order-preserving earliest-feasible match; for ordered one-dimensional
+boundaries this is maximum-cardinality and does not depend on prediction
+enumeration order. Fixture chapters must reference every transcript segment
+exactly once, in ordinal order, with chapter timestamps matching the first and
+last referenced segment; timing gaps are allowed only between chapters. Fixture
+timestamps use the same strict `HH:MM:SS[.fffffff]` form as transcript JSON, and
+prediction contiguity is checked by transcript position rather than by
+consecutive original ordinals.
+Coverage is the fraction of source-segment duration represented by generated
+chapters (timing gaps are not content); the report also includes duration
+constraint violations, source-ID and timestamp-semantic violations, and
+WindowDiff over source-segment windows. Chapter boundaries themselves are
+produced structurally, so each case also reports a provider signal digest over
+the embedding and scoring outputs; substituting a provider changes that digest
+even when the boundaries are unchanged. Signals are quantized to six decimal
+places so the digest does not depend on vectorized floating-point reduction
+order. Fixture IDs must be unique within a run, all report numbers are formatted
+with the invariant culture, and both report forms use line feeds regardless of
+operating system. Reports have stable text and JSON forms and deterministic
+thresholds suitable for a later CI/release gate. Run the focused suite with:
+
+```powershell
+dotnet test .\tests\AudioTranscriber.ChapterEvaluation.Tests\AudioTranscriber.ChapterEvaluation.Tests.csproj --no-restore -v:minimal
+```
+
 ## Clean local-tool installation
 
 Create a package and install it into a temporary tool manifest without changing
