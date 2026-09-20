@@ -891,6 +891,7 @@ public sealed class FoundryLocalAdapterTests
         }
     }
 
+#pragma warning disable CS0618 // IModel 2.0.1 still requires legacy client return types.
     private sealed class FakeCatalogModel : Microsoft.AI.Foundry.Local.IModel
     {
         public FakeCatalogModel(
@@ -902,7 +903,6 @@ public sealed class FoundryLocalAdapterTests
             Alias = alias;
             Variants = variants ?? [];
         }
-
         public string Id { get; }
 
         public string Alias { get; }
@@ -952,6 +952,7 @@ public sealed class FoundryLocalAdapterTests
         {
         }
     }
+#pragma warning restore CS0618
 
     private sealed class TrackingDisposable : IDisposable
     {
