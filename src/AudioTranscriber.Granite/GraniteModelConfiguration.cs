@@ -266,6 +266,12 @@ public static class GraniteCachePathResolver
             var component = components.Pop();
             var candidate = new DirectoryInfo(
                 Path.Combine(resolved.FullName, component));
+            if (candidate.ResolveLinkTarget(returnFinalTarget: false) is DirectoryInfo target)
+            {
+                resolved = target;
+                continue;
+            }
+
             if (!candidate.Exists)
             {
                 resolved = candidate;
@@ -278,8 +284,7 @@ public static class GraniteCachePathResolver
                 break;
             }
 
-            resolved = candidate.ResolveLinkTarget(returnFinalTarget: true)
-                as DirectoryInfo ?? candidate;
+            resolved = candidate;
         }
 
         return resolved.FullName;
