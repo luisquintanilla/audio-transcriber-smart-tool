@@ -51,7 +51,7 @@ public static class TranscriptIngestionAdapter
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        var metadata = FindDocumentMetadata(document);
+        var metadata = RequireDocumentMetadata(document);
         var segments = new List<TranscriptSegment>();
         foreach (var element in document.EnumerateContent())
         {
@@ -61,12 +61,7 @@ public static class TranscriptIngestionAdapter
                     "Only paragraph elements produced by the transcript adapter can be converted.");
             }
 
-            if (!paragraph.Metadata.TryGetValue(SegmentMetadataKey, out var value) ||
-                value is not TranscriptSegmentMetadata segmentMetadata)
-            {
-                throw Failure(
-                    "A transcript paragraph is missing typed segment metadata.");
-            }
+            var segmentMetadata = RequireSegmentMetadata(paragraph);
 
             try
             {
@@ -96,7 +91,7 @@ public static class TranscriptIngestionAdapter
         }
     }
 
-    private static TranscriptDocumentMetadata FindDocumentMetadata(
+    internal static TranscriptDocumentMetadata RequireDocumentMetadata(
         IngestionDocument document)
     {
         TranscriptDocumentMetadata? result = null;
@@ -121,6 +116,19 @@ public static class TranscriptIngestionAdapter
         }
 
         return result ?? throw Failure("Document is missing typed transcript metadata.");
+    }
+
+    internal static TranscriptSegmentMetadata RequireSegmentMetadata(
+        IngestionDocumentElement element)
+    {
+        if (!element.Metadata.TryGetValue(SegmentMetadataKey, out var value) ||
+            value is not TranscriptSegmentMetadata metadata)
+        {
+            throw Failure(
+                "A transcript paragraph is missing typed segment metadata.");
+        }
+
+        return metadata;
     }
 
     private static TranscriptFormatException Failure(
@@ -168,10 +176,12 @@ public sealed record TranscriptSegmentMetadata(
     double? Confidence,
     IReadOnlyDictionary<string, string> SourceMetadata)
 {
+    public string? Text { get; init; }
+
     public static TranscriptSegmentMetadata From(TranscriptSegment segment)
     {
         ArgumentNullException.ThrowIfNull(segment);
-        return new(
+        return new TranscriptSegmentMetadata(
             segment.Id,
             segment.SourceId,
             segment.OriginalOrdinal,
@@ -182,12 +192,15 @@ public sealed record TranscriptSegmentMetadata(
             new ReadOnlyDictionary<string, string>(
                 new Dictionary<string, string>(
                     segment.SourceMetadata,
-                    StringComparer.Ordinal)));
+                    StringComparer.Ordinal)))
+        {
+            Text = segment.Text
+        };
     }
 
     internal TranscriptSegment CreateSegment(string? text) =>
         new(
-            text ?? string.Empty,
+            text ?? Text ?? string.Empty,
             Start,
             End,
             OriginalOrdinal,
