@@ -75,6 +75,7 @@ public sealed class CliApplicationTests
     [InlineData("convert")]
     [InlineData("transcribe")]
     [InlineData("chapters")]
+    [InlineData("enrich")]
     public async Task Every_capability_supports_short_and_full_help(string capabilityName)
     {
         var shortOutput = new StringWriter();
@@ -269,6 +270,121 @@ public sealed class CliApplicationTests
             TestAudio.Delete(path);
         }
     }
+
+    [Fact]
+    public async Task Enrich_rejects_schema_1_0_with_regeneration_guidance()
+    {
+        var input = Path.Combine(
+            Path.GetTempPath(),
+            $"chapter-legacy-{Guid.NewGuid():N}.json");
+        try
+        {
+            await File.WriteAllTextAsync(
+                input,
+                StandaloneChapterArtifactJson.Replace(
+                    "\"schemaVersion\": \"1.1\"",
+                    "\"schemaVersion\": \"1.0\"",
+                    StringComparison.Ordinal));
+            var output = new StringWriter();
+            var error = new StringWriter();
+
+            var exitCode = await new CliApplication().RunAsync(
+                ["enrich", "--input", input, "--output", input + ".out"],
+                output,
+                error);
+
+            Assert.Equal(1, exitCode);
+            Assert.Empty(output.ToString());
+            Assert.Contains("unsupported_schema_version", error.ToString());
+            Assert.Contains("regenerate", error.ToString(), StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(Path.GetFullPath(input), error.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            File.Delete(input);
+            File.Delete(input + ".out");
+        }
+    }
+
+    [Fact]
+    public async Task Enrich_rejects_same_input_and_output_before_model_start()
+    {
+        var input = Path.Combine(
+            Path.GetTempPath(),
+            $"chapter-{Guid.NewGuid():N}.json");
+        try
+        {
+            await File.WriteAllTextAsync(input, StandaloneChapterArtifactJson);
+            var output = new StringWriter();
+            var error = new StringWriter();
+
+            var exitCode = await new CliApplication().RunAsync(
+                ["enrich", "--input", input, "--output", input],
+                output,
+                error);
+
+            Assert.Equal(1, exitCode);
+            Assert.Empty(output.ToString());
+            Assert.Contains("must be different files", error.ToString());
+            Assert.DoesNotContain(Path.GetFullPath(input), error.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            File.Delete(input);
+        }
+    }
+
+    private const string StandaloneChapterArtifactJson =
+        """
+        {
+          "schemaVersion": "1.1",
+          "source": "external.json",
+          "provenance": {
+            "provider": "external",
+            "model": "external",
+            "metadata": {}
+          },
+          "generation": {
+            "algorithm": "external",
+            "provider": "external",
+            "configuration": {}
+          },
+          "chapters": [
+            {
+              "schemaVersion": "1.1",
+              "id": "chapter-001",
+              "title": "Opening",
+              "start": "00:00:00.000",
+              "end": "00:00:01.000",
+              "text": "Opening.",
+              "score": null,
+              "boundary": {
+                "startSegmentId": "segment-001",
+                "endSegmentId": "segment-001",
+                "startOriginalOrdinal": 0,
+                "endOriginalOrdinal": 0,
+                "startSnappedToSegmentBoundary": true,
+                "endSnappedToSegmentBoundary": true
+              },
+              "sourceSegmentIds": ["segment-001"],
+              "sourceIds": ["utterance-001"],
+              "sourceSegments": [
+                {
+                  "id": "segment-001",
+                  "sourceId": "utterance-001",
+                  "originalOrdinal": 0,
+                  "start": "00:00:00.000",
+                  "end": "00:00:01.000",
+                  "text": "Opening.",
+                  "confidence": null,
+                  "sourceMetadata": {}
+                }
+              ],
+              "sourceMetadata": []
+            }
+          ]
+        }
+        """;
 
     private sealed class FakeEngine : ITranscriptionEngine
     {

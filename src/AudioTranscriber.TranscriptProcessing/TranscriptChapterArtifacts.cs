@@ -1,4 +1,6 @@
 using System.Buffers;
+using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DataIngestion;
@@ -7,7 +9,14 @@ namespace AudioTranscriber.TranscriptProcessing;
 
 public static class TranscriptChapterArtifactSchema
 {
-    public const string CurrentVersion = "1.0";
+    public const string CurrentVersion = "1.1";
+
+    public const string PreviousVersion = "1.0";
+
+    public const string RegenerationGuidance =
+        "Regenerate the artifact with 'audio-transcriber chapters' using the " +
+        "source transcript; schema 1.0 cannot be enriched safely because it " +
+        "does not contain source-segment snapshots.";
 }
 
 public sealed record TranscriptChapterSourceMetadata(
@@ -42,6 +51,60 @@ public sealed class TranscriptChapterArtifact
         Boundary = boundary;
     }
 
+    internal TranscriptChapterArtifact(
+        string id,
+        string title,
+        string text,
+        TimeSpan start,
+        TimeSpan end,
+        double? score,
+        TranscriptChapterBoundaryMetadata boundary,
+        IEnumerable<string> sourceSegmentIds,
+        IEnumerable<string> sourceIds,
+        IEnumerable<IngestionDocumentParagraph> sourceElements,
+        IEnumerable<TranscriptSegmentMetadata> sourceSegments,
+        IEnumerable<TranscriptChapterSourceMetadata> sourceMetadata)
+    {
+        Id = RequireText(id, nameof(id));
+        Title = RequireText(title, nameof(title));
+        Text = RequireText(text, nameof(text));
+        if (start < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(start));
+        }
+
+        if (end <= start)
+        {
+            throw new ArgumentOutOfRangeException(nameof(end));
+        }
+
+        if (score is not null &&
+            (!double.IsFinite(score.Value) || score.Value < 0 || score.Value > 1))
+        {
+            throw new ArgumentOutOfRangeException(nameof(score));
+        }
+
+        Boundary = boundary ?? throw new ArgumentNullException(nameof(boundary));
+        SourceSegmentIds = ReadOnlyStrings(sourceSegmentIds, nameof(sourceSegmentIds));
+        SourceIds = ReadOnlyStrings(sourceIds, nameof(sourceIds));
+        SourceElements = ReadOnlyCollection(sourceElements, nameof(sourceElements));
+        SourceSegments = ReadOnlyCollection(sourceSegments, nameof(sourceSegments));
+        SourceMetadata = ReadOnlyCollection(sourceMetadata, nameof(sourceMetadata));
+        if (SourceSegmentIds.Count == 0 ||
+            SourceSegmentIds.Count != SourceSegments.Count ||
+            SourceSegmentIds.Count != SourceElements.Count)
+        {
+            throw new ArgumentException(
+                "Chapter source segment IDs, snapshots, and elements must have equal non-zero counts.");
+        }
+
+        SchemaVersion = TranscriptChapterArtifactSchema.CurrentVersion;
+        Text = TranscriptText.NormalizeWhitespace(text);
+        Start = start;
+        End = end;
+        Score = score;
+    }
+
     public string SchemaVersion { get; }
 
     public string Id { get; }
@@ -72,6 +135,43 @@ public sealed class TranscriptChapterArtifact
     public TranscriptChapterBoundaryMetadata Boundary { get; }
 
     public TranscriptChapterBoundaryMetadata BoundaryMetadata => Boundary;
+
+    private static string RequireText(string value, string parameterName) =>
+        string.IsNullOrWhiteSpace(value)
+            ? throw new ArgumentException("Value cannot be empty.", parameterName)
+            : value.Trim();
+
+    private static IReadOnlyList<string> ReadOnlyStrings(
+        IEnumerable<string> values,
+        string parameterName)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        var result = values.ToArray();
+        if (result.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException(
+                "Values cannot contain empty entries.",
+                parameterName);
+        }
+
+        return Array.AsReadOnly(result);
+    }
+
+    private static IReadOnlyList<T> ReadOnlyCollection<T>(
+        IEnumerable<T> values,
+        string parameterName)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        var result = values.ToArray();
+        if (result.Any(value => value is null))
+        {
+            throw new ArgumentException(
+                "Values cannot contain null entries.",
+                parameterName);
+        }
+
+        return Array.AsReadOnly(result);
+    }
 }
 
 /// <summary>
@@ -333,6 +433,36 @@ public sealed class TranscriptChapterArtifactGenerator
                 }
 
                 writer.WriteEndArray();
+                writer.WritePropertyName("sourceSegments");
+                writer.WriteStartArray();
+                foreach (var segment in chapter.SourceSegments)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("id", segment.Id);
+                    WriteOptionalString(writer, "sourceId", segment.SourceId);
+                    writer.WriteNumber("originalOrdinal", segment.OriginalOrdinal);
+                    writer.WriteString(
+                        "start",
+                        TranscriptJsonWriter.FormatTimestamp(segment.Start));
+                    writer.WriteString(
+                        "end",
+                        TranscriptJsonWriter.FormatTimestamp(segment.End));
+                    writer.WriteString("text", segment.Text);
+                    WriteOptionalString(writer, "speaker", segment.Speaker);
+                    if (segment.Confidence is { } confidence)
+                    {
+                        writer.WriteNumber("confidence", confidence);
+                    }
+                    else
+                    {
+                        writer.WriteNull("confidence");
+                    }
+
+                    WriteMetadata(writer, "sourceMetadata", segment.SourceMetadata);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
                 WriteMetadata(writer, "sourceMetadata", chapter.SourceMetadata);
                 writer.WriteEndObject();
             }
@@ -344,6 +474,813 @@ public sealed class TranscriptChapterArtifactGenerator
 
         return Encoding.UTF8.GetString(buffer.WrittenSpan) + "\n";
     }
+
+    /// <summary>
+    /// Strictly reads standalone Audio Transcriber chapter artifacts.
+    /// </summary>
+    public sealed class TranscriptChapterArtifactReader
+    {
+            public async Task<TranscriptChapterArtifactDocument> ReadDocumentAsync(
+                Stream source,
+                CancellationToken cancellationToken = default)
+            {
+                ArgumentNullException.ThrowIfNull(source);
+                if (!source.CanRead)
+                {
+                    throw new ArgumentException(
+                        "Chapter artifact input stream must be readable.",
+                        nameof(source));
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    using var document = await JsonDocument
+                        .ParseAsync(source, cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+                    return Parse(document.RootElement);
+                }
+                catch (TranscriptFormatException)
+                {
+                    throw;
+                }
+                catch (JsonException exception)
+                {
+                    throw Failure(
+                        "invalid_json",
+                        "$",
+                        "Chapter artifact input is not valid JSON.",
+                        exception);
+                }
+            }
+
+            public async Task<TranscriptChapterArtifactDocument> ReadFileAsync(
+                string path,
+                CancellationToken cancellationToken = default)
+            {
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    throw new ArgumentException("Chapter artifact path cannot be empty.", nameof(path));
+                }
+
+                await using var stream = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 4096,
+                    options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+                return await ReadDocumentAsync(stream, cancellationToken).ConfigureAwait(false);
+            }
+
+            private static TranscriptChapterArtifactDocument Parse(JsonElement root)
+            {
+                var rootObject = RequireObject(root, "$");
+                RequireKnownProperties(
+                    rootObject,
+                    "$",
+                    "schemaVersion",
+                    "source",
+                    "provenance",
+                    "generation",
+                    "chapters");
+        RequireRequiredProperties(
+                    rootObject,
+                    "$",
+                    "schemaVersion",
+                    "source",
+                    "provenance",
+                    "generation",
+                    "chapters");
+                var schemaVersion = RequiredString(rootObject, "schemaVersion", "$");
+                if (schemaVersion == TranscriptChapterArtifactSchema.PreviousVersion)
+                {
+                    throw Failure(
+                        "unsupported_schema_version",
+                        "$.schemaVersion",
+                        $"Chapter artifact schema 1.0 is not accepted. " +
+                        TranscriptChapterArtifactSchema.RegenerationGuidance);
+                }
+
+                if (schemaVersion != TranscriptChapterArtifactSchema.CurrentVersion)
+                {
+                    throw Failure(
+                        "unsupported_schema_version",
+                        "$.schemaVersion",
+                        $"Chapter artifact schema '{schemaVersion}' is not supported. " +
+                        $"Expected '{TranscriptChapterArtifactSchema.CurrentVersion}'.");
+                }
+
+                var source = RequiredString(rootObject, "source", "$");
+                var provenance = ParseProvenance(
+                    RequireObject(rootObject.GetProperty("provenance"), "$.provenance"));
+                var generation = ParseGeneration(
+                    RequireObject(rootObject.GetProperty("generation"), "$.generation"));
+                var chaptersElement = RequiredArray(rootObject, "chapters", "$");
+                var chapters = chaptersElement
+                    .EnumerateArray()
+                    .Select((chapter, index) => ParseChapter(chapter, index))
+                    .ToArray();
+                var duplicate = chapters
+                    .GroupBy(chapter => chapter.Id, StringComparer.Ordinal)
+                    .FirstOrDefault(group => group.Count() > 1);
+                if (duplicate is not null)
+                {
+                    throw Failure(
+                        "duplicate_chapter_id",
+                        "$.chapters",
+                        $"Chapter ID '{duplicate.Key}' is repeated.");
+                }
+
+                try
+                {
+                    return new TranscriptChapterArtifactDocument(
+                        source,
+                        provenance,
+                        chapters,
+                        generation);
+                }
+                catch (ArgumentException exception)
+                {
+                    throw Failure(
+                        "invalid_artifact",
+                        "$",
+                        "Chapter artifact metadata is invalid.",
+                        exception);
+                }
+            }
+
+            private static TranscriptChapterArtifact ParseChapter(
+                JsonElement value,
+                int index)
+            {
+                var path = $"$.chapters[{index}]";
+                var root = RequireObject(value, path);
+                RequireKnownProperties(
+                    root,
+                    path,
+                    "schemaVersion",
+                    "id",
+                    "title",
+                    "start",
+                    "end",
+                    "text",
+                    "score",
+                    "boundary",
+                    "sourceSegmentIds",
+                    "sourceIds",
+                    "sourceSegments",
+                    "sourceMetadata");
+        RequireRequiredProperties(
+                    root,
+                    path,
+                    "schemaVersion",
+                    "id",
+                    "title",
+                    "start",
+                    "end",
+                    "text",
+                    "score",
+                    "boundary",
+                    "sourceSegmentIds",
+                    "sourceIds",
+                    "sourceSegments",
+                    "sourceMetadata");
+                var schemaVersion = RequiredString(root, "schemaVersion", path);
+                if (schemaVersion != TranscriptChapterArtifactSchema.CurrentVersion)
+                {
+                    throw Failure(
+                        "chapter_schema_mismatch",
+                        $"{path}.schemaVersion",
+                        $"Chapter schema '{schemaVersion}' is not supported. " +
+                        $"Expected '{TranscriptChapterArtifactSchema.CurrentVersion}'.");
+                }
+
+                var id = RequiredString(root, "id", path);
+                var title = RequiredString(root, "title", path);
+                var start = RequiredTimestamp(root, "start", path);
+                var end = RequiredTimestamp(root, "end", path);
+                var text = RequiredString(root, "text", path);
+                var score = OptionalNumber(root, "score", path);
+                var boundary = ParseBoundary(
+                    RequireObject(root.GetProperty("boundary"), $"{path}.boundary"),
+                    $"{path}.boundary");
+                var sourceSegmentIds = RequiredStringArray(
+                    root,
+                    "sourceSegmentIds",
+                    path);
+                var sourceIds = RequiredStringArray(root, "sourceIds", path);
+                var sourceSegmentsElement = RequiredArray(root, "sourceSegments", path);
+                var sourceSegments = sourceSegmentsElement
+                    .EnumerateArray()
+                    .Select(
+                        (segment, segmentIndex) =>
+                            ParseSegment(
+                                segment,
+                                $"{path}.sourceSegments[{segmentIndex}]"))
+                    .ToArray();
+                var sourceMetadata = ParseSourceMetadata(
+                    RequiredArray(root, "sourceMetadata", path),
+                    $"{path}.sourceMetadata");
+
+                ValidateChapterInvariants(
+                    path,
+                    id,
+                    text,
+                    start,
+                    end,
+                    boundary,
+                    sourceSegmentIds,
+                    sourceIds,
+                    sourceSegments,
+                    sourceMetadata);
+
+                var document = new IngestionDocument($"chapter-artifact:{id}");
+                var sourceElements = new List<IngestionDocumentParagraph>();
+                foreach (var segment in sourceSegments)
+                {
+                    var paragraph = new IngestionDocumentParagraph(segment.Text!)
+                    {
+                        Text = segment.Text
+                    };
+                    paragraph.Metadata[TranscriptIngestionAdapter.SegmentMetadataKey] = segment;
+                    sourceElements.Add(paragraph);
+                }
+
+                return new TranscriptChapterArtifact(
+                    id,
+                    title,
+                    text,
+                    start,
+                    end,
+                    score,
+                    boundary,
+                    sourceSegmentIds,
+                    sourceIds,
+                    sourceElements,
+                    sourceSegments,
+                    sourceMetadata);
+            }
+
+            private static TranscriptSegmentMetadata ParseSegment(
+                JsonElement value,
+                string path)
+            {
+                var root = RequireObject(value, path);
+                RequireKnownProperties(
+                    root,
+                    path,
+                    "id",
+                    "sourceId",
+                    "originalOrdinal",
+                    "start",
+                    "end",
+                    "text",
+                    "speaker",
+                    "confidence",
+                    "sourceMetadata");
+        RequireRequiredProperties(
+                    root,
+                    path,
+                    "id",
+                    "originalOrdinal",
+                    "start",
+                    "end",
+                    "text",
+                    "confidence",
+                    "sourceMetadata");
+                var id = RequiredString(root, "id", path);
+                var sourceId = OptionalString(root, "sourceId", path);
+                var ordinal = RequiredInt32(root, "originalOrdinal", path);
+                if (ordinal < 0)
+                {
+                    throw Failure(
+                        "invalid_original_ordinal",
+                        $"{path}.originalOrdinal",
+                        "Original ordinal cannot be negative.");
+                }
+
+                var start = RequiredTimestamp(root, "start", path);
+                var end = RequiredTimestamp(root, "end", path);
+                var text = RequiredString(root, "text", path);
+                var speaker = OptionalString(root, "speaker", path);
+                var confidence = OptionalNumber(root, "confidence", path);
+                var sourceMetadata = ParseMetadataObject(
+                    RequireObject(
+                        root.GetProperty("sourceMetadata"),
+                        $"{path}.sourceMetadata"),
+                    $"{path}.sourceMetadata");
+                try
+                {
+                    return new TranscriptSegmentMetadata(
+                        id,
+                        sourceId,
+                        ordinal,
+                        start,
+                        end,
+                        speaker,
+                        confidence,
+                        sourceMetadata)
+                    {
+                        Text = text
+                    };
+                }
+                catch (ArgumentException exception)
+                {
+                    throw Failure(
+                        "invalid_source_segment",
+                        path,
+                        "Source segment snapshot is invalid.",
+                        exception);
+                }
+            }
+
+            private static void ValidateChapterInvariants(
+                string path,
+                string id,
+                string text,
+                TimeSpan start,
+                TimeSpan end,
+                TranscriptChapterBoundaryMetadata boundary,
+                IReadOnlyList<string> sourceSegmentIds,
+                IReadOnlyList<string> sourceIds,
+                IReadOnlyList<TranscriptSegmentMetadata> sourceSegments,
+                IReadOnlyList<TranscriptChapterSourceMetadata> sourceMetadata)
+            {
+                if (sourceSegments.Count == 0)
+                {
+                    throw Failure(
+                        "missing_source_segments",
+                        $"{path}.sourceSegments",
+                        "Each chapter must contain at least one source segment snapshot.");
+                }
+
+                var segmentIds = sourceSegments.Select(segment => segment.Id).ToArray();
+                if (!sourceSegmentIds.SequenceEqual(segmentIds, StringComparer.Ordinal))
+                {
+                    throw Failure(
+                        "source_segment_ids_mismatch",
+                        $"{path}.sourceSegmentIds",
+                        "sourceSegmentIds must exactly match sourceSegments[].id in order.");
+                }
+
+                var expectedSourceIds = sourceSegments
+                    .Where(segment => segment.SourceId is not null)
+                    .Select(segment => segment.SourceId!)
+                    .ToArray();
+                if (!sourceIds.SequenceEqual(expectedSourceIds, StringComparer.Ordinal))
+                {
+                    throw Failure(
+                        "source_ids_mismatch",
+                        $"{path}.sourceIds",
+                        "sourceIds must contain each non-null sourceSegments[].sourceId in order.");
+                }
+
+                var first = sourceSegments[0];
+                var last = sourceSegments[^1];
+                if (start != first.Start || end != last.End)
+                {
+                    throw Failure(
+                        "chapter_timing_mismatch",
+                        path,
+                        "Chapter start/end must match the first/last source segment.");
+                }
+
+                if (boundary.StartSegmentId != first.Id ||
+                    boundary.EndSegmentId != last.Id ||
+                    boundary.StartOriginalOrdinal != first.OriginalOrdinal ||
+                    boundary.EndOriginalOrdinal != last.OriginalOrdinal)
+                {
+                    throw Failure(
+                        "boundary_mismatch",
+                        $"{path}.boundary",
+                        "Boundary metadata must match the first and last source segments.");
+                }
+
+                var expectedText = TranscriptText.NormalizeWhitespace(
+                    string.Join(' ', sourceSegments.Select(segment => segment.Text)));
+                if (!string.Equals(text, expectedText, StringComparison.Ordinal))
+                {
+                    throw Failure(
+                        "chapter_text_mismatch",
+                        $"{path}.text",
+                        "Chapter text must be the normalized ordered source-segment text.");
+                }
+
+                var expectedMetadata = sourceSegments
+                    .SelectMany(
+                        segment => segment.SourceMetadata.Select(
+                            pair => new TranscriptChapterSourceMetadata(
+                                segment.Id,
+                                pair.Key,
+                                pair.Value)))
+                    .ToArray();
+                if (sourceMetadata.Count != expectedMetadata.Length ||
+                    sourceMetadata.Any(
+                        entry => !expectedMetadata.Any(
+                            expected => expected.SourceSegmentId == entry.SourceSegmentId &&
+                                        expected.Key == entry.Key &&
+                                        expected.Value == entry.Value)))
+                {
+                    throw Failure(
+                        "source_metadata_mismatch",
+                        $"{path}.sourceMetadata",
+                        "sourceMetadata must reflect the source segment snapshots.");
+                }
+
+                var duplicateSegmentId = segmentIds
+                    .GroupBy(value => value, StringComparer.Ordinal)
+                    .FirstOrDefault(group => group.Count() > 1);
+                if (duplicateSegmentId is not null)
+                {
+                    throw Failure(
+                        "duplicate_source_segment_id",
+                        $"{path}.sourceSegments",
+                        $"Source segment ID '{duplicateSegmentId.Key}' is repeated.");
+                }
+            }
+
+            private static TranscriptProvenance ParseProvenance(JsonElement root)
+            {
+                RequireKnownProperties(
+                    root,
+                    "$.provenance",
+                    "provider",
+                    "model",
+                    "packageId",
+                    "packageVersion",
+                    "source",
+                    "cachePath",
+                    "metadata");
+        RequireRequiredProperties(root, "$.provenance", "provider", "model", "metadata");
+                return new TranscriptProvenance(
+                    RequiredString(root, "provider", "$.provenance"),
+                    RequiredString(root, "model", "$.provenance"),
+                    OptionalString(root, "packageId", "$.provenance"),
+                    OptionalString(root, "packageVersion", "$.provenance"),
+                    OptionalString(root, "source", "$.provenance"),
+                    OptionalString(root, "cachePath", "$.provenance"),
+                    ParseMetadataObject(
+                        RequireObject(
+                            root.GetProperty("metadata"),
+                            "$.provenance.metadata"),
+                        "$.provenance.metadata"));
+            }
+
+            private static TranscriptChapterGenerationMetadata ParseGeneration(
+                JsonElement root)
+            {
+                RequireKnownProperties(
+                    root,
+                    "$.generation",
+                    "algorithm",
+                    "provider",
+                    "configuration");
+        RequireRequiredProperties(
+                    root,
+                    "$.generation",
+                    "algorithm",
+                    "provider",
+                    "configuration");
+                return new TranscriptChapterGenerationMetadata(
+                    RequiredString(root, "algorithm", "$.generation"),
+                    RequiredString(root, "provider", "$.generation"),
+                    ParseMetadataObject(
+                        RequireObject(
+                            root.GetProperty("configuration"),
+                            "$.generation.configuration"),
+                        "$.generation.configuration"));
+            }
+
+            private static TranscriptChapterBoundaryMetadata ParseBoundary(
+                JsonElement root,
+                string path)
+            {
+                RequireKnownProperties(
+                    root,
+                    path,
+                    "startSegmentId",
+                    "endSegmentId",
+                    "startOriginalOrdinal",
+                    "endOriginalOrdinal",
+                    "startSnappedToSegmentBoundary",
+                    "endSnappedToSegmentBoundary",
+                    "gapBefore",
+                    "gapAfter");
+        RequireRequiredProperties(
+                    root,
+                    path,
+                    "startSegmentId",
+                    "endSegmentId",
+                    "startOriginalOrdinal",
+                    "endOriginalOrdinal",
+                    "startSnappedToSegmentBoundary",
+                    "endSnappedToSegmentBoundary");
+                var startSnapped = RequiredBoolean(root, "startSnappedToSegmentBoundary", path);
+                var endSnapped = RequiredBoolean(root, "endSnappedToSegmentBoundary", path);
+                if (!startSnapped || !endSnapped)
+                {
+                    throw Failure(
+                        "unsupported_boundary",
+                        path,
+                        "Chapter artifacts require boundaries snapped to complete source segments.");
+                }
+
+                return new TranscriptChapterBoundaryMetadata(
+                    RequiredString(root, "startSegmentId", path),
+                    RequiredString(root, "endSegmentId", path),
+                    RequiredInt32(root, "startOriginalOrdinal", path),
+                    RequiredInt32(root, "endOriginalOrdinal", path),
+                    OptionalTimestamp(root, "gapBefore", path),
+                    OptionalTimestamp(root, "gapAfter", path));
+            }
+
+            private static IReadOnlyList<TranscriptChapterSourceMetadata> ParseSourceMetadata(
+                JsonElement value,
+                string path)
+            {
+                var entries = new List<TranscriptChapterSourceMetadata>();
+                foreach (var (item, index) in value.EnumerateArray().Select((item, index) => (item, index)))
+                {
+                    var itemPath = $"{path}[{index}]";
+                    var root = RequireObject(item, itemPath);
+                    RequireKnownProperties(root, itemPath, "sourceSegmentId", "key", "value");
+                    entries.Add(
+                        new TranscriptChapterSourceMetadata(
+                            RequiredString(root, "sourceSegmentId", itemPath),
+                            RequiredString(root, "key", itemPath),
+                            RequiredString(root, "value", itemPath)));
+                }
+
+                return entries;
+            }
+
+            private static IReadOnlyDictionary<string, string> ParseMetadataObject(
+                JsonElement root,
+                string path)
+            {
+                var entries = new List<KeyValuePair<string, string>>();
+                foreach (var property in root.EnumerateObject())
+                {
+                    if (string.IsNullOrWhiteSpace(property.Name) ||
+                        property.Value.ValueKind != JsonValueKind.String ||
+                        property.Value.GetString() is null)
+                    {
+                        throw Failure(
+                            "invalid_metadata",
+                            path,
+                            "Metadata must contain non-empty string values.");
+                    }
+
+                    entries.Add(new(property.Name, property.Value.GetString()!));
+                }
+
+                try
+                {
+                    return TranscriptProvenance.ReadOnlyMetadata(entries, path);
+                }
+                catch (ArgumentException exception)
+                {
+                    throw Failure("invalid_metadata", path, "Metadata is invalid.", exception);
+                }
+            }
+
+            private static JsonElement RequireObject(JsonElement value, string path)
+            {
+                if (value.ValueKind != JsonValueKind.Object)
+                {
+                    throw Failure("invalid_object", path, "Expected a JSON object.");
+                }
+
+                return value;
+            }
+
+            private static JsonElement RequiredArray(
+                JsonElement root,
+                string propertyName,
+                string path)
+            {
+                if (!root.TryGetProperty(propertyName, out var value) ||
+                    value.ValueKind != JsonValueKind.Array)
+                {
+                    throw Failure(
+                        $"missing_{propertyName}",
+                        $"{path}.{propertyName}",
+                        $"Expected '{propertyName}' to be an array.");
+                }
+
+                return value;
+            }
+
+            private static string RequiredString(
+                JsonElement root,
+                string propertyName,
+                string path)
+            {
+                if (!root.TryGetProperty(propertyName, out var value) ||
+                    value.ValueKind != JsonValueKind.String ||
+                    string.IsNullOrWhiteSpace(value.GetString()))
+                {
+                    throw Failure(
+                        $"missing_{propertyName}",
+                        $"{path}.{propertyName}",
+                        $"Expected '{propertyName}' to be a non-empty string.");
+                }
+
+                return value.GetString()!.Trim();
+            }
+
+            private static string? OptionalString(
+                JsonElement root,
+                string propertyName,
+                string path)
+            {
+                if (!root.TryGetProperty(propertyName, out var value) ||
+                    value.ValueKind == JsonValueKind.Null)
+                {
+                    return null;
+                }
+
+                if (value.ValueKind != JsonValueKind.String)
+                {
+                    throw Failure(
+                        $"invalid_{propertyName}",
+                        $"{path}.{propertyName}",
+                        $"Expected '{propertyName}' to be a string or null.");
+                }
+
+                return string.IsNullOrWhiteSpace(value.GetString())
+                    ? null
+                    : value.GetString()!.Trim();
+            }
+
+            private static IReadOnlyList<string> RequiredStringArray(
+                JsonElement root,
+                string propertyName,
+                string path)
+            {
+                var value = RequiredArray(root, propertyName, path);
+                var result = new List<string>();
+                foreach (var item in value.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.String ||
+                        string.IsNullOrWhiteSpace(item.GetString()))
+                    {
+                        throw Failure(
+                            $"invalid_{propertyName}",
+                            $"{path}.{propertyName}",
+                            $"Expected '{propertyName}' to contain non-empty strings.");
+                    }
+
+                    result.Add(item.GetString()!.Trim());
+                }
+
+                return result;
+            }
+
+            private static int RequiredInt32(
+                JsonElement root,
+                string propertyName,
+                string path)
+            {
+                if (!root.TryGetProperty(propertyName, out var value) ||
+                    !value.TryGetInt32(out var result))
+                {
+                    throw Failure(
+                        $"invalid_{propertyName}",
+                        $"{path}.{propertyName}",
+                        $"Expected '{propertyName}' to be a 32-bit integer.");
+                }
+
+                return result;
+            }
+
+            private static bool RequiredBoolean(
+                JsonElement root,
+                string propertyName,
+                string path)
+            {
+                if (!root.TryGetProperty(propertyName, out var value) ||
+                    (value.ValueKind != JsonValueKind.True &&
+                     value.ValueKind != JsonValueKind.False))
+                {
+                    throw Failure(
+                        $"invalid_{propertyName}",
+                        $"{path}.{propertyName}",
+                        $"Expected '{propertyName}' to be a boolean.");
+                }
+
+                return value.GetBoolean();
+            }
+
+            private static double? OptionalNumber(
+                JsonElement root,
+                string propertyName,
+                string path)
+            {
+                if (!root.TryGetProperty(propertyName, out var value) ||
+                    value.ValueKind == JsonValueKind.Null)
+                {
+                    return null;
+                }
+
+                if (!value.TryGetDouble(out var result) || !double.IsFinite(result))
+                {
+                    throw Failure(
+                        $"invalid_{propertyName}",
+                        $"{path}.{propertyName}",
+                        $"Expected '{propertyName}' to be a finite number.");
+                }
+
+                return result;
+            }
+
+            private static TimeSpan RequiredTimestamp(
+                JsonElement root,
+                string propertyName,
+                string path) =>
+                ParseTimestamp(
+                    RequiredString(root, propertyName, path),
+                    $"{path}.{propertyName}");
+
+            private static TimeSpan? OptionalTimestamp(
+                JsonElement root,
+                string propertyName,
+                string path)
+            {
+                var value = OptionalString(root, propertyName, path);
+                return value is null ? null : ParseTimestamp(value, $"{path}.{propertyName}");
+            }
+
+            private static TimeSpan ParseTimestamp(string value, string path)
+            {
+                if (!TimeSpan.TryParseExact(
+                        value,
+                        "c",
+                        CultureInfo.InvariantCulture,
+                        out var timestamp) ||
+                    timestamp < TimeSpan.Zero)
+                {
+                    throw Failure(
+                        "invalid_timestamp",
+                        path,
+                        "Timestamps must use invariant duration format 'c' and be non-negative.");
+                }
+
+                return timestamp;
+            }
+
+            private static void RequireKnownProperties(
+                JsonElement root,
+                string path,
+                params string[] names)
+            {
+                var allowed = names.ToHashSet(StringComparer.Ordinal);
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var property in root.EnumerateObject())
+                {
+                    if (!seen.Add(property.Name))
+                    {
+                        throw Failure(
+                            "duplicate_property",
+                            path,
+                            $"Property '{property.Name}' is repeated.");
+                    }
+
+                    if (!allowed.Contains(property.Name))
+                    {
+                        throw Failure(
+                            "unknown_property",
+                            $"{path}.{property.Name}",
+                            $"Property '{property.Name}' is not part of the chapter artifact contract.");
+                    }
+                }
+            }
+
+            private static void RequireRequiredProperties(
+                JsonElement root,
+                string path,
+                params string[] names)
+            {
+                foreach (var name in names)
+                {
+                    if (!root.TryGetProperty(name, out _))
+                    {
+                        throw Failure(
+                            $"missing_{name}",
+                            $"{path}.{name}",
+                            $"Required property '{name}' is missing.");
+                    }
+                }
+            }
+
+            private static TranscriptFormatException Failure(
+                string code,
+                string path,
+                string message,
+                Exception? innerException = null) =>
+                new(code, path, message, innerException);
+        }
 
     private static string CreateId(TranscriptChunkWindow window, int index) =>
         $"chapter-{index + 1:D4}-{window.Id}";
@@ -475,4 +1412,22 @@ public sealed class TranscriptChapterArtifactGenerator
             writer.WriteString(name, TranscriptJsonWriter.FormatTimestamp(value.Value));
         }
     }
+}
+
+/// <summary>
+/// Strictly reads standalone Audio Transcriber chapter artifacts.
+/// </summary>
+public sealed class TranscriptChapterArtifactReader
+{
+    private readonly TranscriptChapterArtifactGenerator.TranscriptChapterArtifactReader reader = new();
+
+    public Task<TranscriptChapterArtifactDocument> ReadDocumentAsync(
+        Stream source,
+        CancellationToken cancellationToken = default) =>
+        reader.ReadDocumentAsync(source, cancellationToken);
+
+    public Task<TranscriptChapterArtifactDocument> ReadFileAsync(
+        string path,
+        CancellationToken cancellationToken = default) =>
+        reader.ReadFileAsync(path, cancellationToken);
 }

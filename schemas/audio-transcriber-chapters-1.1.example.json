@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "1.1",
+  "source": "externally-authored-podcast.json",
+  "provenance": {
+    "provider": "external-producer",
+    "model": "transcript-source",
+    "metadata": {}
+  },
+  "generation": {
+    "algorithm": "external-chapter-authoring",
+    "provider": "external-producer",
+    "configuration": {}
+  },
+  "chapters": [
+    {
+      "schemaVersion": "1.1",
+      "id": "chapter-001",
+      "title": "Opening",
+      "start": "00:00:00.000",
+      "end": "00:00:12.500",
+      "text": "Welcome to the episode.",
+      "score": null,
+      "boundary": {
+        "startSegmentId": "segment-001",
+        "endSegmentId": "segment-001",
+        "startOriginalOrdinal": 0,
+        "endOriginalOrdinal": 0,
+        "startSnappedToSegmentBoundary": true,
+        "endSnappedToSegmentBoundary": true
+      },
+      "sourceSegmentIds": [
+        "segment-001"
+      ],
+      "sourceIds": [
+        "utterance-001"
+      ],
+      "sourceSegments": [
+        {
+          "id": "segment-001",
+          "sourceId": "utterance-001",
+          "originalOrdinal": 0,
+          "start": "00:00:00.000",
+          "end": "00:00:12.500",
+          "text": "Welcome to the episode.",
+          "confidence": null,
+          "sourceMetadata": {}
+        }
+      ],
+      "sourceMetadata": []
+    }
+  ]
+}

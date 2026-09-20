@@ -58,7 +58,7 @@ public sealed class ChapterEnrichmentTests
                 .Serialize(document));
         var root = json.RootElement;
         Assert.Equal("1.0", root.GetProperty("schemaVersion").GetString());
-        Assert.Equal("1.0", root.GetProperty("chapterArtifactSchemaVersion").GetString());
+        Assert.Equal("1.1", root.GetProperty("chapterArtifactSchemaVersion").GetString());
         Assert.Equal("fixture.wav", root.GetProperty("source").GetString());
         Assert.Equal(
             "fixture-provider",

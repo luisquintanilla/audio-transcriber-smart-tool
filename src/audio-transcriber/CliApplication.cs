@@ -1,6 +1,7 @@
 using System.Security;
 using System.Text.Json;
 using AudioTranscriber;
+using AudioTranscriber.FoundryLocal;
 using AudioTranscriber.Granite;
 using AudioTranscriber.TranscriptProcessing;
 using Microsoft.Extensions.AI;
@@ -17,15 +18,30 @@ public sealed class CliApplication
     private readonly ITranscriptionEngine _engine;
     private readonly WavAudioReader _audioReader;
     private readonly IAudioConversionService _conversionService;
+    private readonly Func<FoundryLocalEnrichmentOptions, IFoundryLocalRuntime>
+        _foundryRuntimeFactory;
+    private readonly Func<
+        FoundryLocalEnrichmentOptions,
+        IFoundryLocalRuntime,
+        FoundryLocalEnrichmentProvider> _foundryProviderFactory;
 
     public CliApplication(
         ITranscriptionEngine? engine = null,
         WavAudioReader? audioReader = null,
-        IAudioConversionService? conversionService = null)
+        IAudioConversionService? conversionService = null,
+        Func<FoundryLocalEnrichmentOptions, IFoundryLocalRuntime>? foundryRuntimeFactory = null,
+        Func<
+            FoundryLocalEnrichmentOptions,
+            IFoundryLocalRuntime,
+            FoundryLocalEnrichmentProvider>? foundryProviderFactory = null)
     {
         _engine = engine ?? new WhisperNetEngine();
         _audioReader = audioReader ?? new WavAudioReader();
         _conversionService = conversionService ?? new AudioConversionService();
+        _foundryRuntimeFactory = foundryRuntimeFactory ??
+            (_ => new FoundryLocalSdkRuntime());
+        _foundryProviderFactory = foundryProviderFactory ??
+            ((options, runtime) => new FoundryLocalEnrichmentProvider(options, runtime));
     }
 
     public async Task<int> RunAsync(
@@ -83,6 +99,11 @@ public sealed class CliApplication
                     output,
                     error,
                     repositoryRoot ?? Directory.GetCurrentDirectory(),
+                    cancellationToken).ConfigureAwait(false),
+                "enrich" => await EnrichAsync(
+                    args[1..],
+                    output,
+                    error,
                     cancellationToken).ConfigureAwait(false),
                 _ => await WriteUsageErrorAsync(error).ConfigureAwait(false)
             };
@@ -246,7 +267,10 @@ public sealed class CliApplication
             TranscriptFormatException)
         {
             var detail = exception is TranscriptFormatException formatException
-                ? $" ({formatException.Code} at {formatException.JsonPath})"
+                ? formatException.Code == "unsupported_schema_version"
+                    ? $" ({formatException.Code}: " +
+                      TranscriptChapterArtifactSchema.RegenerationGuidance + ")"
+                    : $" ({formatException.Code} at {formatException.JsonPath})"
                 : string.Empty;
             throw new InvalidDataException(
                 $"Transcript input could not be read{detail} from " +
@@ -315,6 +339,113 @@ public sealed class CliApplication
         {
             graniteProvider?.Dispose();
         }
+    }
+
+    private async Task<int> EnrichAsync(
+        string[] args,
+        TextWriter output,
+        TextWriter error,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseEnrichOptions(args, out var options, out var parseError))
+        {
+            await error.WriteLineAsync($"error: {parseError}").ConfigureAwait(false);
+            return 2;
+        }
+
+        if (AreSameChapterInputAndOutput(options.InputPath, options.OutputPath))
+        {
+            await error.WriteLineAsync(
+                "error: enrichment input and output must be different files.")
+                .ConfigureAwait(false);
+            return 1;
+        }
+
+        if (File.Exists(options.OutputPath) && !options.Overwrite)
+        {
+            await error.WriteLineAsync(
+                "error: enrichment output already exists; pass --overwrite to replace it explicitly.")
+                .ConfigureAwait(false);
+            return 1;
+        }
+
+        TranscriptChapterArtifactDocument artifact;
+        try
+        {
+            artifact = await new TranscriptChapterArtifactReader()
+                .ReadFileAsync(options.InputPath, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is FileNotFoundException or
+            DirectoryNotFoundException or
+            UnauthorizedAccessException or
+            IOException or
+            TranscriptFormatException)
+        {
+            var detail = exception is TranscriptFormatException formatException
+                ? formatException.Code == "unsupported_schema_version"
+                    ? $" ({formatException.Code}: " +
+                      TranscriptChapterArtifactSchema.RegenerationGuidance + ")"
+                    : $" ({formatException.Code} at {formatException.JsonPath})"
+                : string.Empty;
+            throw new InvalidDataException(
+                $"Chapter artifact input could not be read{detail} from " +
+                $"'{SafePathDisplay.Basename(options.InputPath)}'.",
+                exception);
+        }
+
+        var providerOptions = new FoundryLocalEnrichmentOptions(options.Model)
+        {
+            ModelCacheDirectory = options.CachePath,
+            AllowModelDownload = options.AllowModelDownload,
+            RequestTimeout = options.RequestTimeout,
+            MaxOutputTokens = options.MaxOutputTokens,
+            Seed = options.Seed,
+            DoSample = options.DoSample,
+            Temperature = options.Temperature,
+            MaxResponseAttempts = options.MaxResponseAttempts
+        };
+        providerOptions.Validate();
+        var runtime = _foundryRuntimeFactory(providerOptions);
+        await using var provider = _foundryProviderFactory(providerOptions, runtime);
+        var document = await new TranscriptChapterEnrichmentOrchestrator(
+                provider,
+                provider)
+            .EnrichAsync(
+                artifact,
+                provider.CreateProcessingOptions(
+                    options.FailurePolicy,
+                    options.IncludeOverallSummary),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            await new TranscriptChapterEnrichmentArtifactFileWriter()
+                .WriteAsync(
+                    options.OutputPath,
+                    document,
+                    options.Overwrite,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+            UnauthorizedAccessException or
+            DirectoryNotFoundException)
+        {
+            throw new IOException(
+                "Enrichment output could not be written to " +
+                $"'{SafePathDisplay.Basename(options.OutputPath)}'.",
+                exception);
+        }
+
+        await output.WriteLineAsync(
+            $"Wrote enrichment for {document.Count} chapter(s) to " +
+            $"'{SafePathDisplay.Basename(options.OutputPath)}' using " +
+            $"{FoundryLocalModelContract.RequiredModelAlias}.").ConfigureAwait(false);
+        return 0;
     }
 
     private static bool AreSameChapterInputAndOutput(
@@ -658,6 +789,218 @@ public sealed class CliApplication
         return provider is "deterministic" or "granite";
     }
 
+    private static bool TryParseEnrichOptions(
+        string[] args,
+        out EnrichOptions options,
+        out string error)
+    {
+        string? input = null;
+        string? output = null;
+        var model = FoundryLocalModelContract.RequiredModelAlias;
+        string? cachePath = null;
+        var allowModelDownload = false;
+        var requestTimeout = TimeSpan.FromMinutes(2);
+        var maxOutputTokens = 1200;
+        var seed = 0;
+        var doSample = false;
+        var temperature = 0d;
+        var maxResponseAttempts = 2;
+        var failurePolicy = TranscriptChapterEnrichmentFailurePolicy.FailFast;
+        var includeOverallSummary = false;
+        var overwrite = false;
+
+        for (var index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--input":
+                    if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+                    {
+                        options = default!;
+                        error = "--input requires a chapter artifact JSON path.";
+                        return false;
+                    }
+
+                    input = Path.GetFullPath(args[index]);
+                    break;
+                case "--output":
+                    if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+                    {
+                        options = default!;
+                        error = "--output requires an enrichment JSON path.";
+                        return false;
+                    }
+
+                    output = Path.GetFullPath(args[index]);
+                    break;
+                case "--model":
+                    if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+                    {
+                        options = default!;
+                        error = $"--model requires '{FoundryLocalModelContract.RequiredModelAlias}'.";
+                        return false;
+                    }
+
+                    model = args[index].Trim();
+                    break;
+                case "--cache":
+                    if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+                    {
+                        options = default!;
+                        error = "--cache requires an external model cache path.";
+                        return false;
+                    }
+
+                    cachePath = Path.GetFullPath(args[index]);
+                    break;
+                case "--allow-model-download":
+                case "--allow-download":
+                    allowModelDownload = true;
+                    break;
+                case "--timeout":
+                    if (++index >= args.Length ||
+                        !TryParseDuration(args[index], out requestTimeout))
+                    {
+                        options = default!;
+                        error = "--timeout must be a positive number of seconds.";
+                        return false;
+                    }
+
+                    break;
+                case "--tokens":
+                case "--max-output-tokens":
+                    if (++index >= args.Length ||
+                        !int.TryParse(
+                            args[index],
+                            System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out maxOutputTokens) ||
+                        maxOutputTokens <= 0)
+                    {
+                        options = default!;
+                        error = "--tokens must be a positive integer.";
+                        return false;
+                    }
+
+                    break;
+                case "--seed":
+                    if (++index >= args.Length ||
+                        !int.TryParse(
+                            args[index],
+                            System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out seed) ||
+                        seed < 0)
+                    {
+                        options = default!;
+                        error = "--seed must be a non-negative integer.";
+                        return false;
+                    }
+
+                    break;
+                case "--sampling":
+                case "--do-sample":
+                    if (++index >= args.Length ||
+                        !bool.TryParse(args[index], out doSample))
+                    {
+                        options = default!;
+                        error = "--sampling must be true or false.";
+                        return false;
+                    }
+
+                    break;
+                case "--temperature":
+                    if (++index >= args.Length ||
+                        !double.TryParse(
+                            args[index],
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out temperature) ||
+                        !double.IsFinite(temperature) ||
+                        temperature < 0 ||
+                        temperature > 2)
+                    {
+                        options = default!;
+                        error = "--temperature must be between zero and two.";
+                        return false;
+                    }
+
+                    break;
+                case "--max-response-attempts":
+                    if (++index >= args.Length ||
+                        !int.TryParse(
+                            args[index],
+                            System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out maxResponseAttempts) ||
+                        maxResponseAttempts is < 1 or > 2)
+                    {
+                        options = default!;
+                        error = "--max-response-attempts must be one or two.";
+                        return false;
+                    }
+
+                    break;
+                case "--failure-policy":
+                    if (++index >= args.Length ||
+                        !Enum.TryParse(
+                            args[index],
+                            ignoreCase: true,
+                            out failurePolicy) ||
+                        !Enum.IsDefined(failurePolicy))
+                    {
+                        options = default!;
+                        error = "--failure-policy must be fail-fast or preserve-partial.";
+                        return false;
+                    }
+
+                    break;
+                case "--overall-summary":
+                    includeOverallSummary = true;
+                    break;
+                case "--overwrite":
+                    overwrite = true;
+                    break;
+                default:
+                    options = default!;
+                    error = $"Unknown enrich option: {args[index]}";
+                    return false;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            options = default!;
+            error = "A --input chapter artifact JSON path is required.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            options = default!;
+            error = "A --output enrichment JSON path is required.";
+            return false;
+        }
+
+        options = new EnrichOptions(
+            input,
+            output,
+            model,
+            cachePath,
+            allowModelDownload,
+            requestTimeout,
+            maxOutputTokens,
+            seed,
+            doSample,
+            temperature,
+            maxResponseAttempts,
+            failurePolicy,
+            includeOverallSummary,
+            overwrite);
+        error = string.Empty;
+        return true;
+    }
+
     private static bool TryParseDuration(string value, out TimeSpan duration)
     {
         if (!double.TryParse(
@@ -726,5 +1069,21 @@ public sealed class CliApplication
         string? CachePath,
         bool AllowNetworkDownload,
         bool RequireAvx2,
+        bool Overwrite);
+
+    private sealed record EnrichOptions(
+        string InputPath,
+        string OutputPath,
+        string Model,
+        string? CachePath,
+        bool AllowModelDownload,
+        TimeSpan RequestTimeout,
+        int MaxOutputTokens,
+        int Seed,
+        bool DoSample,
+        double Temperature,
+        int MaxResponseAttempts,
+        TranscriptChapterEnrichmentFailurePolicy FailurePolicy,
+        bool IncludeOverallSummary,
         bool Overwrite);
 }

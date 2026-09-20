@@ -14,6 +14,11 @@ public enum FoundryLocalDiagnosticCode
     InvalidConfiguration
 }
 
+public static class FoundryLocalModelContract
+{
+    public const string RequiredModelAlias = "qwen3.5-0.8b-generic-cpu:3";
+}
+
 public sealed record FoundryLocalModelAvailability
 {
     public FoundryLocalModelAvailability(
@@ -120,8 +125,26 @@ public sealed record FoundryLocalEnrichmentOptions
 
     public double Temperature { get; init; }
 
+    public int Seed { get; init; }
+
+    public bool DoSample { get; init; }
+
+    public int MaxResponseAttempts { get; init; } = 2;
+
     public void Validate()
     {
+        if (!string.Equals(
+                ModelAlias,
+                FoundryLocalModelContract.RequiredModelAlias,
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"Foundry Local enrichment requires the exact model " +
+                $"'{FoundryLocalModelContract.RequiredModelAlias}'; variants and " +
+                "provider fallbacks are not supported.",
+                nameof(ModelAlias));
+        }
+
         if (string.IsNullOrWhiteSpace(ApplicationName))
         {
             throw new ArgumentException(
@@ -165,6 +188,20 @@ public sealed record FoundryLocalEnrichmentOptions
         if (MaxOutputTokens <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(MaxOutputTokens));
+        }
+
+        if (Seed < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(Seed),
+                "Seed must be zero or greater.");
+        }
+
+        if (MaxResponseAttempts is < 1 or > 2)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxResponseAttempts),
+                "MaxResponseAttempts must be one or two.");
         }
 
         if (!double.IsFinite(Temperature) || Temperature < 0 || Temperature > 2)
@@ -271,7 +308,8 @@ public sealed class FoundryLocalRuntimeSession : IAsyncDisposable
     }
 }
 
-public sealed class FoundryLocalProviderException : InvalidOperationException
+public sealed class FoundryLocalProviderException
+    : InvalidOperationException, ITranscriptProviderFailure
 {
     public FoundryLocalProviderException(
         FoundryLocalDiagnosticCode code,
@@ -291,4 +329,9 @@ public sealed class FoundryLocalProviderException : InvalidOperationException
     public string ModelAlias { get; }
 
     public FoundryLocalReadiness? Readiness { get; }
+
+    public string Code =>
+        $"foundry_{DiagnosticCode.ToString().ToLowerInvariant()}";
+
+    public string SanitizedMessage => Message;
 }

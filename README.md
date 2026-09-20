@@ -273,8 +273,9 @@ and fails fast on cancellation before enumerating the source.
 
 ## Optional transcript chunking and chapter artifacts
 
-`src/AudioTranscriber.TranscriptProcessing` also provides the versioned `1.0`
-chunking and chapter-artifact contracts. `TranscriptChunkBuilder` consumes the
+`src/AudioTranscriber.TranscriptProcessing` also provides the versioned `1.1`
+chapter-artifact contract (the enrichment output wrapper remains schema `1.0`).
+`TranscriptChunkBuilder` consumes the
 canonical `Microsoft.Extensions.DataIngestion.IngestionDocument` boundary:
 one ordered section contains one paragraph per transcript segment, and the
 document/paragraph metadata keys are
@@ -302,6 +303,15 @@ embedding implementation, model asset, network dependency, CLI capability, or
 Smart Tool manifest entry is required for the lower-level contracts. The
 versioned serialization also carries source-linked boundary metadata, gap
 metadata, and generation configuration.
+
+The public Chapter Artifact schema is
+[`schemas/audio-transcriber-chapters-1.1.schema.json`](schemas/audio-transcriber-chapters-1.1.schema.json)
+(Draft 2020-12), with an independently authored minimal fixture at
+[`schemas/audio-transcriber-chapters-1.1.example.json`](schemas/audio-transcriber-chapters-1.1.example.json).
+It serializes canonical per-segment IDs/source IDs, original ordinals,
+timestamps, text, speaker/confidence, and source metadata so an artifact is
+self-contained. The strict reader rejects schema `1.0` with regeneration
+guidance; `chapters` is one producer, not a prerequisite.
 
 The production `TranscriptChapterGenerator` and
 `TranscriptChapterArtifactFileWriter` compose these contracts for the
@@ -431,8 +441,9 @@ abstractions. The core `AudioTranscriber` and
 `AudioTranscriber.TranscriptProcessing` packages do not acquire those
 Foundry dependencies.
 
-The model alias or model ID is required and is never guessed. The adapter
-discovers the local catalog, validates cached and loaded readiness, and reports
+The adapter uses exactly `qwen3.5-0.8b-generic-cpu:3`; it does not select a
+variant, provider fallback, or alternate alias. The adapter discovers the local
+catalog, validates cached and loaded readiness, and reports
 the available models, external cache location, and stable diagnostic code
 when the runtime or requested model is unavailable. Foundry Local model files
 and runtime state remain in its external cache; they are not packaged with
@@ -444,11 +455,13 @@ with no silent cloud fallback or remote endpoint.
 using AudioTranscriber.FoundryLocal;
 using AudioTranscriber.TranscriptProcessing;
 
-var modelAlias = Environment.GetEnvironmentVariable(
-    "AUDIO_TRANSCRIBER_FOUNDRY_LOCAL_MODEL")
-    ?? throw new InvalidOperationException("Choose a local model alias explicitly.");
 await using var provider = new FoundryLocalEnrichmentProvider(
-    new FoundryLocalEnrichmentOptions(modelAlias),
+    new FoundryLocalEnrichmentOptions("qwen3.5-0.8b-generic-cpu:3")
+    {
+        ModelCacheDirectory = Environment.GetEnvironmentVariable(
+            "AUDIO_TRANSCRIBER_FOUNDRY_LOCAL_CACHE"),
+        AllowModelDownload = false
+    },
     new FoundryLocalSdkRuntime());
 
 var enrichment = await new TranscriptChapterEnrichmentOrchestrator(
@@ -461,14 +474,32 @@ var enrichment = await new TranscriptChapterEnrichmentOrchestrator(
             includeOverallSummary: true));
 ```
 
-The adapter sends chapter prompts with exact source-segment evidence and
-schema-versioned JSON output. Its overall-summary prompt contains only
-successful chapter summaries and IDs, so the full transcript is not
-reprocessed. The default solution tests use fake runtime/chat clients and do
-not download models or require a running local service. The opt-in test is
-enabled with `AUDIO_TRANSCRIBER_FOUNDRY_LOCAL_MODEL`; if that explicitly
-requested runtime or model is unavailable, it fails with the readiness
-diagnostic rather than falling back elsewhere.
+The first-class standalone CLI path is:
+
+```powershell
+audio-transcriber enrich `
+  --input .\chapters.json --output .\enrichment.json `
+  --model qwen3.5-0.8b-generic-cpu:3 `
+  --cache $env:LOCALAPPDATA\FoundryLocal\cache `
+  --failure-policy preserve-partial --overall-summary
+```
+
+`enrich` accepts a hand-authored or externally produced schema `1.1` artifact;
+it does not require original audio, transcript input, a repository checkout, or
+hidden state. Use `--allow-model-download` only as an explicit opt-in. The
+adapter sends compact schema `2.0` references and trusted code reconstructs
+canonical evidence. It accepts only raw JSON or one complete `json` fence,
+allows one bounded corrective retry, and records exact model/resolved model,
+seed `0`, greedy `doSample=false`, temperature, token limit, and retry settings.
+Provider failures preserve stable codes/messages in both policies while
+sanitizing raw model output and paths. Readiness diagnostics report a stable
+code, exact model, cache state, and remediation without cloud fallback.
+The default solution tests use fake runtime/chat clients and do not download
+models or require a running local service.
+
+The enrichment schema borrows timestamp, ordering, and source-mapping concepts
+from Podcasting 2.0 JSON Chapters, W3C WebVTT, and proposed STJ, but does not
+claim conformance to any of them.
 
 The `IChatClient` streaming surface is implemented as one response converted
 to one or more standard `ChatResponseUpdate` values because the current

@@ -1,18 +1,23 @@
-using System.Globalization;
 using System.Text.Json;
 using AudioTranscriber.TranscriptProcessing;
 
 namespace AudioTranscriber.FoundryLocal;
 
-public sealed class FoundryLocalResponseException : FormatException
+public sealed class FoundryLocalResponseException
+    : FormatException, ITranscriptProviderFailure
 {
-    public FoundryLocalResponseException(string code, string message, Exception? innerException = null)
+    public FoundryLocalResponseException(
+        string code,
+        string message,
+        Exception? innerException = null)
         : base(message, innerException)
     {
         Code = code;
     }
 
     public string Code { get; }
+
+    public string SanitizedMessage => Message;
 }
 
 public static class FoundryLocalResponseParser
@@ -25,20 +30,33 @@ public static class FoundryLocalResponseParser
         ArgumentNullException.ThrowIfNull(chapter);
 
         using var document = ParseDocument(response);
-        var root = RequireObject(document.RootElement);
+        var root = RequireObject(document.RootElement, "$");
+        RequireKnownProperties(
+            root,
+            "$",
+            "schemaVersion",
+            "kind",
+            "chapterRef",
+            "summary",
+            "title",
+            "keywords",
+            "evidence");
         RequireSchema(root, "chapter");
 
-        var chapterId = RequiredString(root, "chapterId");
-        if (!string.Equals(chapterId, chapter.Id, StringComparison.Ordinal))
+        var chapterRef = RequiredString(root, "chapterRef", "$");
+        if (!string.Equals(
+                chapterRef,
+                FoundryLocalPromptBuilder.ChapterReference(0),
+                StringComparison.Ordinal))
         {
             throw Invalid(
-                "chapter_id_mismatch",
-                $"The response chapter ID '{chapterId}' does not match '{chapter.Id}'.");
+                "chapter_ref_mismatch",
+                "The response chapter reference does not match the request.");
         }
 
-        var summary = RequiredString(root, "summary");
-        var title = OptionalString(root, "title");
-        var keywords = RequiredStringArray(root, "keywords");
+        var summary = RequiredString(root, "summary", "$");
+        var title = RequiredNullableString(root, "title", "$");
+        var keywords = RequiredStringArray(root, "keywords", "$");
         var evidence = ParseEvidence(root, chapter);
 
         try
@@ -62,24 +80,37 @@ public static class FoundryLocalResponseParser
         ArgumentNullException.ThrowIfNull(request);
 
         using var document = ParseDocument(response);
-        var root = RequireObject(document.RootElement);
+        var root = RequireObject(document.RootElement, "$");
+        RequireKnownProperties(
+            root,
+            "$",
+            "schemaVersion",
+            "kind",
+            "summary",
+            "chapterRefs");
         RequireSchema(root, "overall");
 
-        var summary = RequiredString(root, "summary");
-        var chapterIds = RequiredStringArray(root, "chapterIds");
-        var expected = request.ChapterSummaries
-            .Select(item => item.ChapterId)
+        var summary = RequiredString(root, "summary", "$");
+        var chapterRefs = RequiredStringArray(root, "chapterRefs", "$");
+        var expectedRefs = request.ChapterSummaries
+            .Select((_, index) => FoundryLocalPromptBuilder.ChapterReference(index))
             .ToArray();
-        if (!chapterIds.SequenceEqual(expected, StringComparer.Ordinal))
+        if (!chapterRefs.SequenceEqual(expectedRefs, StringComparer.Ordinal))
         {
             throw Invalid(
-                "overall_chapter_ids_mismatch",
-                "The overall response must cite the input chapter IDs in order.");
+                "overall_chapter_refs_mismatch",
+                "The overall response must cite each input chapter reference in order.");
         }
 
+        var chapterIds = request.ChapterSummaries
+            .Select(item => item.ChapterId)
+            .ToArray();
         try
         {
-            return new TranscriptOverallSummary(summary, chapterIds, request.IsPartial);
+            return new TranscriptOverallSummary(
+                summary,
+                chapterIds,
+                request.IsPartial);
         }
         catch (ArgumentException exception)
         {
@@ -102,54 +133,84 @@ public static class FoundryLocalResponseParser
                 "The chapter response must contain an evidence array.");
         }
 
-        var sourceSegments = chapter.SourceSegments.ToDictionary(
-            segment => segment.Id,
-            StringComparer.Ordinal);
+        var sourceSegments = chapter.SourceSegments
+            .Select(
+                (segment, index) =>
+                    (Reference: FoundryLocalPromptBuilder.SegmentReference(index), Segment: segment))
+            .ToDictionary(item => item.Reference, item => item.Segment, StringComparer.Ordinal);
         var values = new List<TranscriptChapterEvidenceReference>();
-        foreach (var item in evidenceElement.EnumerateArray())
+        foreach (var (item, index) in evidenceElement.EnumerateArray().Select((item, index) => (item, index)))
         {
-            var evidence = RequireObject(item);
-            var sourceSegmentId = RequiredString(evidence, "sourceSegmentId");
-            if (!sourceSegments.TryGetValue(sourceSegmentId, out var segment))
+            var path = $"$.evidence[{index}]";
+            var evidence = RequireObject(item, path);
+            RequireKnownProperties(evidence, path, "segmentRef");
+            var segmentRef = RequiredString(evidence, "segmentRef", path);
+            if (!sourceSegments.TryGetValue(segmentRef, out var segment))
             {
                 throw Invalid(
-                    "unknown_evidence_segment",
-                    $"Evidence segment '{sourceSegmentId}' is not part of chapter '{chapter.Id}'.");
-            }
-
-            var sourceId = OptionalString(evidence, "sourceId");
-            if (!string.Equals(sourceId, segment.SourceId, StringComparison.Ordinal))
-            {
-                throw Invalid(
-                    "evidence_source_mismatch",
-                    $"Evidence source ID for '{sourceSegmentId}' does not match the transcript.");
-            }
-
-            var start = RequiredTimestamp(evidence, "start");
-            var end = RequiredTimestamp(evidence, "end");
-            if (start != segment.Start || end != segment.End)
-            {
-                throw Invalid(
-                    "evidence_timing_mismatch",
-                    $"Evidence timing for '{sourceSegmentId}' does not match the transcript.");
+                    "unknown_evidence_segment_ref",
+                    $"Evidence reference '{segmentRef}' is not part of the chapter request.");
             }
 
             values.Add(
                 new TranscriptChapterEvidenceReference(
-                    sourceSegmentId,
-                    start,
-                    end,
-                    sourceId));
+                    segment.Id,
+                    segment.Start,
+                    segment.End,
+                    segment.SourceId));
         }
 
         return values;
     }
 
+    public static string ExtractJsonEnvelope(string response)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(response);
+        var trimmed = response.Trim();
+        if (trimmed.StartsWith("```", StringComparison.Ordinal))
+        {
+            const string prefix = "```json";
+            if (!trimmed.StartsWith(prefix, StringComparison.Ordinal) ||
+                !trimmed.EndsWith("```", StringComparison.Ordinal) ||
+                trimmed.Length <= prefix.Length + 3)
+            {
+                throw Invalid(
+                    "invalid_response_envelope",
+                    "The response must be raw JSON or exactly one complete json code fence.");
+            }
+
+            var body = trimmed[prefix.Length..^3];
+            if (body.Length > 0 && (body[0] == '\r' || body[0] == '\n'))
+            {
+                body = body.TrimStart('\r', '\n');
+            }
+
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                throw Invalid(
+                    "invalid_response_envelope",
+                    "The json code fence must contain one complete JSON document.");
+            }
+
+            return body.Trim();
+        }
+
+        if (trimmed.Contains("```", StringComparison.Ordinal))
+        {
+            throw Invalid(
+                "invalid_response_envelope",
+                "The response must be raw JSON or exactly one complete json code fence.");
+        }
+
+        return trimmed;
+    }
+
     private static JsonDocument ParseDocument(string response)
     {
+        var json = ExtractJsonEnvelope(response);
         try
         {
-            return JsonDocument.Parse(response);
+            return JsonDocument.Parse(json);
         }
         catch (JsonException exception)
         {
@@ -162,7 +223,7 @@ public static class FoundryLocalResponseParser
 
     private static void RequireSchema(JsonElement root, string kind)
     {
-        var schemaVersion = RequiredString(root, "schemaVersion");
+        var schemaVersion = RequiredString(root, "schemaVersion", "$");
         if (!string.Equals(
                 schemaVersion,
                 FoundryLocalPromptBuilder.ResponseSchemaVersion,
@@ -173,7 +234,7 @@ public static class FoundryLocalResponseParser
                 $"Response schema '{schemaVersion}' is not supported.");
         }
 
-        var responseKind = RequiredString(root, "kind");
+        var responseKind = RequiredString(root, "kind", "$");
         if (!string.Equals(responseKind, kind, StringComparison.Ordinal))
         {
             throw Invalid(
@@ -182,17 +243,20 @@ public static class FoundryLocalResponseParser
         }
     }
 
-    private static JsonElement RequireObject(JsonElement value)
+    private static JsonElement RequireObject(JsonElement value, string path)
     {
         if (value.ValueKind != JsonValueKind.Object)
         {
-            throw Invalid("invalid_root", "The response must contain a JSON object.");
+            throw Invalid("invalid_root", $"'{path}' must be a JSON object.");
         }
 
         return value;
     }
 
-    private static string RequiredString(JsonElement objectElement, string propertyName)
+    private static string RequiredString(
+        JsonElement objectElement,
+        string propertyName,
+        string path)
     {
         if (!objectElement.TryGetProperty(propertyName, out var value) ||
             value.ValueKind != JsonValueKind.String ||
@@ -206,10 +270,19 @@ public static class FoundryLocalResponseParser
         return value.GetString()!.Trim();
     }
 
-    private static string? OptionalString(JsonElement objectElement, string propertyName)
+    private static string? RequiredNullableString(
+        JsonElement objectElement,
+        string propertyName,
+        string path)
     {
-        if (!objectElement.TryGetProperty(propertyName, out var value) ||
-            value.ValueKind == JsonValueKind.Null)
+        if (!objectElement.TryGetProperty(propertyName, out var value))
+        {
+            throw Invalid(
+                $"missing_{propertyName}",
+                $"The response must contain '{propertyName}' as a string or null.");
+        }
+
+        if (value.ValueKind == JsonValueKind.Null)
         {
             return null;
         }
@@ -228,7 +301,8 @@ public static class FoundryLocalResponseParser
 
     private static IReadOnlyList<string> RequiredStringArray(
         JsonElement objectElement,
-        string propertyName)
+        string propertyName,
+        string path)
     {
         if (!objectElement.TryGetProperty(propertyName, out var value) ||
             value.ValueKind != JsonValueKind.Array)
@@ -255,24 +329,27 @@ public static class FoundryLocalResponseParser
         return values;
     }
 
-    private static TimeSpan RequiredTimestamp(
-        JsonElement objectElement,
-        string propertyName)
+    private static void RequireKnownProperties(
+        JsonElement root,
+        string path,
+        params string[] names)
     {
-        var text = RequiredString(objectElement, propertyName);
-        if (!TimeSpan.TryParseExact(
-                text,
-                "c",
-                CultureInfo.InvariantCulture,
-                out var timestamp) ||
-            timestamp < TimeSpan.Zero)
+        var allowed = names.ToHashSet(StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in root.EnumerateObject())
         {
-            throw Invalid(
-                $"invalid_{propertyName}",
-                $"The response property '{propertyName}' must use the invariant duration format.");
-        }
+            if (!seen.Add(property.Name))
+            {
+                throw Invalid("duplicate_property", $"Response property '{property.Name}' is repeated.");
+            }
 
-        return timestamp;
+            if (!allowed.Contains(property.Name))
+            {
+                throw Invalid(
+                    "unknown_property",
+                    $"Response property '{property.Name}' is not part of schema 2.0.");
+            }
+        }
     }
 
     private static FoundryLocalResponseException Invalid(

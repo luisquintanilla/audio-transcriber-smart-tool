@@ -127,15 +127,14 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
                     [],
                     exception.Message);
         }
-        catch (FoundryLocalException exception)
+        catch (FoundryLocalException)
         {
             return new FoundryLocalReadiness(
                 FoundryLocalDiagnosticCode.RuntimeUnavailable,
                 options.ModelAlias,
                 null,
                 [],
-                "Foundry Local reported that its runtime is unavailable: " +
-                exception.Message);
+                "Foundry Local reported that its runtime is unavailable.");
         }
         catch (InvalidOperationException)
         {
@@ -394,17 +393,11 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
     internal static IModel? FindModel(
         IEnumerable<IModel> models,
         string aliasOrId) =>
-        models
-            .SelectMany(model => new[] { model }.Concat(model.Variants))
-            .FirstOrDefault(
-                model => string.Equals(
-                             model.Alias,
-                             aliasOrId,
-                             StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(
-                             model.Id,
-                             aliasOrId,
-                             StringComparison.OrdinalIgnoreCase));
+        models.FirstOrDefault(
+            model => string.Equals(
+                model.Alias,
+                aliasOrId,
+                StringComparison.Ordinal));
 
     internal static async Task<(bool IsCached, bool IsLoaded)> GetModelStateAsync(
         IModel model,

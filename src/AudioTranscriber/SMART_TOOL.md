@@ -12,6 +12,7 @@ use_cases:
   - Produce timestamped transcripts from local speech recordings
   - Render transcripts for people or downstream programs
   - Produce source-linked timestamped chapters from transcript JSON
+  - Enrich any self-contained Audio Transcriber Chapter Artifact with Foundry Local
   - Check local model, cache, FFmpeg, and package readiness
 platforms:
   - windows
@@ -28,6 +29,10 @@ requires:
     purpose: Needed only when chapters explicitly selects the optional granite provider; the pinned assets must be provisioned in an external cache.
     optional: true
     install: https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual
+  - name: Foundry Local model assets
+    purpose: Needed only by the explicit enrich capability; the exact Qwen model must be available in an external Foundry Local cache.
+    optional: true
+    install: https://learn.microsoft.com/windows/ai/apis/foundry-local
 ---
 
 # audio-transcriber
@@ -61,10 +66,9 @@ audio-transcriber transcribe --help
 ```
 
 The deterministic capabilities are `manifest`, `doctor`, `convert`, and
-default-provider `chapters`. `transcribe` is model-backed local inference;
-`chapters --provider granite` is explicitly model-backed and requires its
-external pinned assets. The library APIs are the composable surface for callers
-who need typed values instead of CLI text.
+default-provider `chapters`. `transcribe`, `chapters --provider granite`, and
+`enrich` are model-backed local inference capabilities. The library APIs are
+the composable surface for callers who need typed values instead of CLI text.
 
 ## Command semantics
 
@@ -80,6 +84,11 @@ who need typed values instead of CLI text.
   generates summaries. Use `--provider granite` only when the pinned Granite
   model and tokenizer assets are already available in an external cache or
   `--allow-network-download` is explicitly supplied.
+- `enrich` consumes one standalone Chapter Artifact schema `1.1` JSON file and
+  writes provider enrichment. It does not read audio, transcripts, repository
+  state, or hidden prior-run state. The exact model is
+  `qwen3.5-0.8b-generic-cpu:3`; use `--allow-model-download` explicitly to
+  permit a download and `--cache <external-path>` to select an external cache.
 
 ## Source checkout and local package install
 
@@ -166,6 +175,44 @@ provider is structural and offline. Provider-backed generation is asynchronous
 and requires explicit injection; the CLI's `granite` selection creates the
 optional provider only after validating its external assets, and never falls
 back to deterministic generation after a Granite readiness failure.
+
+### Standalone chapter enrichment
+
+`enrich` requires the public Audio Transcriber Chapter Artifact schema `1.1`,
+defined by `schemas/audio-transcriber-chapters-1.1.schema.json`. The artifact
+contains canonical chapter and source-segment IDs, original ordinals, exact
+timestamps and text, optional speaker/confidence, source metadata, provenance,
+boundaries, and generation metadata. `schemas/audio-transcriber-chapters-1.1.example.json`
+is a hand-authored minimal input that can be passed directly to `enrich`.
+Schema `1.0` is rejected because it does not contain the source-segment
+snapshots needed to validate evidence; regenerate it with `chapters`.
+
+The Foundry response contract is schema `2.0`: compact request-scoped
+`c1`/`s1` references only. The strict parser accepts raw JSON or exactly one
+complete `json` code fence, rejects prose, extra properties, malformed or
+truncated output, and performs at most one corrective retry. Trusted code
+reconstructs canonical IDs, source IDs, timestamps, and evidence from the
+input artifact. Defaults are `seed=0`, `doSample=false`, `temperature=0`, and
+two response attempts; all are recorded with the exact and resolved model in
+generation metadata. `fail-fast` and `preserve-partial` retain stable provider
+error codes and sanitized messages without raw model output or local paths.
+
+The convenience flow is:
+
+```powershell
+audio-transcriber convert --input .\episode.mp3 --output .\episode.wav
+audio-transcriber transcribe --input .\episode.wav --format json --output .\transcript.json
+audio-transcriber chapters --input .\transcript.json --output .\chapters.json
+audio-transcriber enrich --input .\chapters.json --output .\enrichment.json `
+  --model qwen3.5-0.8b-generic-cpu:3 --cache $env:LOCALAPPDATA\FoundryLocal\cache
+```
+
+An external producer can skip the first three commands and pass its own
+schema-validated `chapters.json`; no checkout or audio is needed. Concepts were
+checked against Podcasting 2.0 JSON Chapters, W3C WebVTT, and proposed STJ
+representations for timestamps, ordering, and source mapping, but this
+artifact is an Audio Transcriber contract and does not claim conformance to
+those standards.
 
 ## Model integration status
 
