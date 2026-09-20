@@ -419,3 +419,37 @@ not introduce a second embedding abstraction.
 The CLI now rejects identical normalized input/output paths before input
 processing and before the overwrite branch. The regression covers both default
 and explicit overwrite modes and verifies the source remains unchanged.
+
+# Chapter enrichment review follow-up
+
+The finalized #10 base is authoritative for lower DataIngestion, AI
+abstractions, chapter capability, and evaluation changes. This layer only
+replays the enrichment commit and keeps its provider-neutral boundaries.
+
+## Accepted review fixes
+
+1. Reject provider-configuration keys that collide after trimming. The focused
+   regression is `Options_reject_provider_configuration_keys_that_collide_after_trimming`.
+2. Stream UTF-8 JSON directly to the temporary output file instead of first
+   materializing a full serialized string and then a second full byte array.
+   `Enrichment_writer_serializes_valid_utf8_without_full_byte_array_duplication`
+   verifies bytes/schema and atomic output behavior without coupling to a
+   private implementation detail.
+3. Report the trimmed normalized key in duplicate-configuration diagnostics;
+   `Options_reject_provider_configuration_keys_that_collide_after_trimming`
+   covers both options and generation-metadata constructors.
+4. Dispose parsed `JsonDocument` instances deterministically with `using var`
+   in `ChapterEnrichmentTests`.
+5. When all chapters are missing/failed under `PreservePartial` with overall
+   output enabled, record `missing_overall_summary` without invoking the
+   assembler; `PreservePartial_records_missing_overall_summary_when_all_chapters_are_missing_or_failed`
+   covers the regression.
+
+## Validation
+
+- Focused enrichment tests: `dotnet test .\tests\AudioTranscriber.Tests\AudioTranscriber.Tests.csproj --configuration Release --no-restore --filter "FullyQualifiedName~ChapterEnrichment" -v:minimal` — 11 passed.
+- `dotnet restore .\AudioTranscriber.sln --configfile .\NuGet.config --verbosity minimal` passed.
+- Release solution build passed with 0 warnings and 0 errors.
+- Release solution tests passed: 254 core tests plus 15 evaluation tests, 1 pre-existing opt-in Whisper smoke test skipped, 0 failed.
+- `dotnet list .\AudioTranscriber.sln package --include-transitive` passed.
+- Release library and CLI packs succeeded: `AudioTranscriber.0.1.1.nupkg` and `audio-transcriber.0.1.1.nupkg`.
