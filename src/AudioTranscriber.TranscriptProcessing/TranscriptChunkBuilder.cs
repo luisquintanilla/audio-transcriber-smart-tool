@@ -325,6 +325,14 @@ public sealed class TranscriptChunkBuilder
 
     private static TranscriptChunkInput MapDocument(IngestionDocument document)
     {
+        if (document.Sections.Count != 1)
+        {
+            throw new TranscriptFormatException(
+                "invalid_ingestion_document",
+                "$",
+                "Transcript documents must contain exactly one section.");
+        }
+
         var metadata = TranscriptIngestionAdapter.RequireDocumentMetadata(document);
         if (!string.Equals(
                 metadata.SchemaVersion,

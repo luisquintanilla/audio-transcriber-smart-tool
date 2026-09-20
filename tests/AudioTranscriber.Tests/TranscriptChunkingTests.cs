@@ -775,6 +775,20 @@ public sealed class TranscriptChunkingTests
     }
 
     [Fact]
+    public void Build_AdditionalSection_ThrowsFormatException()
+    {
+        var document = CreateDocument(
+            Segment("canonical transcript", TimeSpan.Zero, TimeSpan.FromSeconds(1), 0));
+        document.Sections.Add(new DataIngestion.IngestionDocumentSection());
+
+        var exception = Assert.Throws<Processing.TranscriptFormatException>(
+            () => CreateBuilder().Build(document, CreateOptions()));
+
+        Assert.Equal("invalid_ingestion_document", exception.Code);
+        Assert.Contains("exactly one section", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_MalformedTiming_IsRejectedWithDocumentedValidationDetails()
     {
         var reversed = Assert.Throws<ArgumentOutOfRangeException>(

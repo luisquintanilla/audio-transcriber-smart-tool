@@ -42,7 +42,7 @@ documented broad exception behavior without inventing members or messages.
 - `Constructor_PreservesDocumentedDiagnosticDetails`
 - `ReaderFailure_ExposesStableFormatDiagnostics`
 
-### `tests/AudioTranscriber.Tests/TranscriptChunkingTests.cs` (18)
+### `tests/AudioTranscriber.Tests/TranscriptChunkingTests.cs` (21)
 
 - `Build_EmptyTranscript_ReturnsEmptyResult`
 - `Build_ConsumesCanonicalDataIngestionElementsAndTypedMetadata`
@@ -54,6 +54,7 @@ documented broad exception behavior without inventing members or messages.
 - `Build_SnapsInternalStartToSourceSegmentBoundary`
 - `Build_SnapsInternalEndToSourceSegmentBoundary`
 - `Build_GapBetweenSegments_EmitsExplicitGap`
+- `Build_LongGap_PartitionsWithinMaximumDuration`
 - `Build_GapAtChunkBoundary_PreservesGapSemantics`
 - `Build_RespectsMinimumDuration`
 - `Build_MinimumDuration_MergesContiguousSegmentsWithinMaximum`
@@ -61,6 +62,8 @@ documented broad exception behavior without inventing members or messages.
 - `Build_MinimumDuration_WhenGapPreventsExpansion_UsesExplicitGap`
 - `Build_RespectsMaximumDuration`
 - `Build_InvalidDurationOptions_ThrowsDocumentedArgumentException`
+- `Build_UnsupportedTranscriptSchema_ThrowsFormatException`
+- `Build_AdditionalSection_ThrowsFormatException`
 - `Build_MalformedTiming_IsRejectedWithDocumentedValidationDetails`
 
 ### `tests/AudioTranscriber.Tests/TranscriptChunkingBehaviorTests.cs` (7)
@@ -73,10 +76,11 @@ documented broad exception behavior without inventing members or messages.
 - `BuildAsync_PreservesDeterministicOutputForDeterministicDependencies`
 - `BuildAsync_UsesStandardEmbeddingVectorsForCosineSimilarity`
 
-### `tests/AudioTranscriber.Tests/ChapterArtifactTests.cs` (8)
+### `tests/AudioTranscriber.Tests/ChapterArtifactTests.cs` (9)
 
 - `Generate_SameChunkResult_ProducesEquivalentArtifacts`
 - `Generate_UsesVersionedArtifactContract`
+- `Generate_StructuralChunks_PreserveNullScore`
 - `Generate_PreservesCollidingMetadataKeysWithoutSyntheticKeyCollisions`
 - `Generate_PreservesChunkOrder`
 - `Serialize_SameArtifacts_ProducesIdenticalOutput`
@@ -97,18 +101,18 @@ the existing SDK implicit compile glob; no project-file edit was needed.
 Commands run:
 
 ```text
-dotnet restore .\AudioTranscriber.sln
-dotnet build .\tests\AudioTranscriber.Tests\AudioTranscriber.Tests.csproj --no-restore --no-incremental -v:q
-dotnet test .\tests\AudioTranscriber.Tests\AudioTranscriber.Tests.csproj --no-restore --filter "FullyQualifiedName~TranscriptChunkingTests" -v:q
-dotnet build .\AudioTranscriber.sln --no-incremental
-dotnet test .\AudioTranscriber.sln
+dotnet restore AudioTranscriber.sln --source https://api.nuget.org/v3/index.json -v:q
+dotnet test tests/AudioTranscriber.Tests/AudioTranscriber.Tests.csproj --no-restore -c Release --filter "FullyQualifiedName~TranscriptChunkingTests|FullyQualifiedName~TranscriptChunkingBehaviorTests|FullyQualifiedName~TranscriptChunkingDependencyTests|FullyQualifiedName~ChapterArtifactTests|FullyQualifiedName~TranscriptFormatExceptionTests|FullyQualifiedName~TranscriptIngestionAdapterTests" -v:q
+dotnet build AudioTranscriber.sln --no-restore --no-incremental -c Release -v:q
+dotnet test AudioTranscriber.sln --no-restore --no-build -c Release -v:q
 ```
 
 The initial scoped and full builds/tests stopped at compilation while the
 production declarations were absent. After implementing the contracts and builder, the focused
-chunking/artifact/ingestion run passed 54 tests. The final Release solution
-build completed with 0 warnings and 0 errors. The final Release solution test run passed 210 tests with 1 pre-existing
-opt-in model smoke test skipped.
+chunking/artifact/ingestion run passed 55 tests. The final Release solution
+build completed with 0 warnings and 0 errors. The final Release solution test
+run passed 210 tests with 1 pre-existing opt-in model smoke test skipped and 1
+unrelated cross-platform path-display assertion failing.
 
 The initial compile blockers were limited to the production declarations added
 by this PR:
@@ -126,7 +130,7 @@ by this PR:
 - Pseudo-mutation review: the canonical boundary, duration/gap,
   dependency-request, deterministic-output, cosine-similarity, and
   non-vacuous-gap assertions are covered by the focused suite.
-- Assertion-quality review: final review passed. All 54 focused tests have substantive
+- Assertion-quality review: final review passed. All 55 focused tests have substantive
   assertions; no assertion-free or wholly trivial tests remain. Equality,
   structural, exception, negative, collection, and dependency side-effect
   assertions are used where applicable.
