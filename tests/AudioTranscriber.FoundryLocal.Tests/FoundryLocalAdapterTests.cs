@@ -612,6 +612,23 @@ public sealed class FoundryLocalAdapterTests
     }
 
     [Fact]
+    public async Task Model_state_uses_the_selected_variant()
+    {
+        var selected = new FakeCatalogModel(
+            "variant-id",
+            "model-variant",
+            isCached: true,
+            isLoaded: false);
+
+        var state = await FoundryLocalSdkRuntime.GetModelStateAsync(
+            selected,
+            CancellationToken.None);
+
+        Assert.True(state.IsCached);
+        Assert.False(state.IsLoaded);
+    }
+
+    [Fact]
     public void Transferred_request_items_are_not_disposed_by_the_transfer_helper()
     {
         var item = new TrackingDisposable();
@@ -897,11 +914,15 @@ public sealed class FoundryLocalAdapterTests
         public FakeCatalogModel(
             string id,
             string alias,
-            IReadOnlyList<Microsoft.AI.Foundry.Local.IModel>? variants = null)
+            IReadOnlyList<Microsoft.AI.Foundry.Local.IModel>? variants = null,
+            bool isCached = false,
+            bool isLoaded = false)
         {
             Id = id;
             Alias = alias;
             Variants = variants ?? [];
+            IsCached = isCached;
+            IsLoaded = isLoaded;
         }
         public string Id { get; }
 
@@ -912,11 +933,15 @@ public sealed class FoundryLocalAdapterTests
 
         public IReadOnlyList<Microsoft.AI.Foundry.Local.IModel> Variants { get; }
 
+        public bool IsCached { get; }
+
+        public bool IsLoaded { get; }
+
         public Task<bool> IsCachedAsync(CancellationToken? ct = null) =>
-            Task.FromResult(false);
+            Task.FromResult(IsCached);
 
         public Task<bool> IsLoadedAsync(CancellationToken? ct = null) =>
-            Task.FromResult(false);
+            Task.FromResult(IsLoaded);
 
         public Task DownloadAsync(
             Action<float>? downloadProgress = null,

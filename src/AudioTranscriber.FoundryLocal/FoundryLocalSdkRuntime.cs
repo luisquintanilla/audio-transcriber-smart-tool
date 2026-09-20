@@ -85,14 +85,10 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
                     $"'{selected.Info.Task}'.");
             }
 
-            var isCached = IsPresent(
-                cachedModels,
-                selected.Alias,
-                selected.Id);
-            var isLoaded = IsPresent(
-                loadedModels,
-                selected.Alias,
-                selected.Id);
+            var (isCached, isLoaded) = await GetModelStateAsync(
+                    selected,
+                    cancellationToken)
+                .ConfigureAwait(false);
             var cachePath = isCached
                 ? await selected.GetPathAsync(cancellationToken).ConfigureAwait(false)
                 : null;
@@ -233,10 +229,9 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
             FoundryLocalModelLeaseRegistry.FoundryLocalModelLease? modelLease = null;
             try
             {
-                var cached = IsPresent(
-                    cachedModels,
-                    selected.Alias,
-                    selected.Id);
+                var cached = await selected
+                    .IsCachedAsync(cancellationToken)
+                    .ConfigureAwait(false);
                 if (!cached && !options.AllowModelDownload)
                 {
                     throw CreateFailure(
@@ -260,15 +255,18 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
                         cancellationToken)
                     .ConfigureAwait(false);
 
-                var refreshedCached = await catalog
-                    .GetCachedModelsAsync(cancellationToken)
+                var (isCached, isLoaded) = await GetModelStateAsync(
+                        selected,
+                        cancellationToken)
                     .ConfigureAwait(false);
-                var refreshedLoaded = await catalog
-                    .GetLoadedModelsAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                if (!IsPresent(refreshedCached, selected.Alias, selected.Id) ||
-                    !IsPresent(refreshedLoaded, selected.Alias, selected.Id))
+                if (!isCached || !isLoaded)
                 {
+                    var refreshedCached = await catalog
+                        .GetCachedModelsAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    var refreshedLoaded = await catalog
+                        .GetLoadedModelsAsync(cancellationToken)
+                        .ConfigureAwait(false);
                     throw CreateFailure(
                         FoundryLocalDiagnosticCode.ModelNotReady,
                         options,
@@ -380,16 +378,6 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
             .ToArray();
     }
 
-    private static bool IsPresent(
-        IEnumerable<IModel> models,
-        string alias,
-        string id) =>
-        models
-            .SelectMany(ModelKeys)
-            .Any(
-                key => string.Equals(key, alias, StringComparison.OrdinalIgnoreCase) ||
-                       string.Equals(key, id, StringComparison.OrdinalIgnoreCase));
-
     private static bool IsChatModel(IModel model) =>
         string.Equals(
             model.Info.Task,
@@ -414,6 +402,16 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
                              model.Id,
                              aliasOrId,
                              StringComparison.OrdinalIgnoreCase));
+
+    internal static async Task<(bool IsCached, bool IsLoaded)> GetModelStateAsync(
+        IModel model,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        return (
+            await model.IsCachedAsync(cancellationToken).ConfigureAwait(false),
+            await model.IsLoadedAsync(cancellationToken).ConfigureAwait(false));
+    }
 
     private static IEnumerable<string> ModelKeys(IModel model)
     {
