@@ -357,24 +357,27 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
             options,
             cancellationToken);
 
-    private static IReadOnlyList<FoundryLocalModelAvailability> CreateAvailability(
+    internal static IReadOnlyList<FoundryLocalModelAvailability> CreateAvailability(
         IEnumerable<IModel> catalog,
         IEnumerable<IModel> cached,
         IEnumerable<IModel> loaded)
     {
         var cachedIds = cached
-            .SelectMany(model => ModelKeys(model))
+            .Select(model => model.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var loadedIds = loaded
-            .SelectMany(model => ModelKeys(model))
+            .Select(model => model.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return catalog
+            .SelectMany(model => new[] { model }.Concat(model.Variants))
+            .GroupBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
             .Select(
                 model => new FoundryLocalModelAvailability(
                     model.Alias,
                     model.Id,
-                    cachedIds.Contains(model.Id) || cachedIds.Contains(model.Alias),
-                    loadedIds.Contains(model.Id) || loadedIds.Contains(model.Alias)))
+                    cachedIds.Contains(model.Id),
+                    loadedIds.Contains(model.Id)))
             .ToArray();
     }
 
@@ -411,17 +414,6 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
         return (
             await model.IsCachedAsync(cancellationToken).ConfigureAwait(false),
             await model.IsLoadedAsync(cancellationToken).ConfigureAwait(false));
-    }
-
-    private static IEnumerable<string> ModelKeys(IModel model)
-    {
-        yield return model.Alias;
-        yield return model.Id;
-        foreach (var variant in model.Variants)
-        {
-            yield return variant.Alias;
-            yield return variant.Id;
-        }
     }
 
     private static FoundryLocalProviderException CreateFailure(

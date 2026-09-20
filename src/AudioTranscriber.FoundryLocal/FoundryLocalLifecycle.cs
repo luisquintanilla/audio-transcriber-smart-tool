@@ -7,6 +7,8 @@ internal interface IFoundryLocalManagerHost
 {
     bool IsInitialized { get; }
 
+    object? ManagerIdentity { get; }
+
     Task InitializeAsync(
         FoundryLocalEnrichmentOptions options,
         CancellationToken cancellationToken);
@@ -15,6 +17,9 @@ internal interface IFoundryLocalManagerHost
 internal sealed class FoundryLocalManagerHost : IFoundryLocalManagerHost
 {
     public bool IsInitialized => FoundryLocalManager.IsInitialized;
+
+    public object? ManagerIdentity =>
+        IsInitialized ? FoundryLocalManager.Instance : null;
 
     public Task InitializeAsync(
         FoundryLocalEnrichmentOptions options,
@@ -35,6 +40,7 @@ internal sealed class FoundryLocalManagerConfigurationRegistry
     private readonly IFoundryLocalManagerHost managerHost;
     private readonly SemaphoreSlim gate = new(1, 1);
     private FoundryLocalManagerConfiguration? acceptedConfiguration;
+    private object? acceptedManager;
 
     public FoundryLocalManagerConfigurationRegistry(
         IFoundryLocalManagerHost managerHost)
@@ -52,9 +58,16 @@ internal sealed class FoundryLocalManagerConfigurationRegistry
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!managerHost.IsInitialized)
+            var isInitialized = managerHost.IsInitialized;
+            var currentManager = isInitialized
+                ? managerHost.ManagerIdentity
+                : null;
+            if (!isInitialized ||
+                (acceptedManager is not null &&
+                 !ReferenceEquals(acceptedManager, currentManager)))
             {
                 acceptedConfiguration = null;
+                acceptedManager = null;
             }
 
             if (acceptedConfiguration is not null &&
@@ -67,7 +80,7 @@ internal sealed class FoundryLocalManagerConfigurationRegistry
                     "application name or model-cache directory.");
             }
 
-            if (managerHost.IsInitialized)
+            if (isInitialized)
             {
                 if (acceptedConfiguration is null)
                 {
@@ -85,6 +98,7 @@ internal sealed class FoundryLocalManagerConfigurationRegistry
                 .InitializeAsync(options, cancellationToken)
                 .ConfigureAwait(false);
             acceptedConfiguration = requested;
+            acceptedManager = managerHost.ManagerIdentity;
         }
         finally
         {

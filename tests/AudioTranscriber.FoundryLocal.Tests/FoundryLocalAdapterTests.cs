@@ -587,6 +587,23 @@ public sealed class FoundryLocalAdapterTests
     }
 
     [Fact]
+    public async Task Manager_configuration_rejects_recreated_external_manager()
+    {
+        var host = new FakeManagerHost();
+        var registry = new FoundryLocalManagerConfigurationRegistry(host);
+        var options = new FoundryLocalEnrichmentOptions("model");
+        await registry.EnsureCompatibleAsync(options, CancellationToken.None);
+        host.RecreateExternally();
+
+        var exception = await Assert.ThrowsAsync<FoundryLocalProviderException>(
+            () => registry.EnsureCompatibleAsync(options, CancellationToken.None));
+
+        Assert.Equal(
+            FoundryLocalDiagnosticCode.InvalidConfiguration,
+            exception.DiagnosticCode);
+    }
+
+    [Fact]
     public void Manager_application_names_use_the_same_normalized_value()
     {
         Assert.Equal(
@@ -626,6 +643,35 @@ public sealed class FoundryLocalAdapterTests
 
         Assert.True(state.IsCached);
         Assert.False(state.IsLoaded);
+    }
+
+    [Fact]
+    public void Model_availability_reports_each_variant_state()
+    {
+        var cachedVariant = new FakeCatalogModel(
+            "cached-variant",
+            "model-cached");
+        var uncachedVariant = new FakeCatalogModel(
+            "uncached-variant",
+            "model-uncached");
+        var model = new FakeCatalogModel(
+            "default-variant",
+            "model",
+            [cachedVariant, uncachedVariant]);
+
+        var availability = FoundryLocalSdkRuntime.CreateAvailability(
+            [model],
+            [cachedVariant],
+            []);
+
+        Assert.True(
+            Assert.Single(
+                availability,
+                item => item.ModelId == "cached-variant").IsCached);
+        Assert.False(
+            Assert.Single(
+                availability,
+                item => item.ModelId == "uncached-variant").IsCached);
     }
 
     [Fact]
@@ -786,6 +832,8 @@ public sealed class FoundryLocalAdapterTests
 
         public bool IsInitialized { get; private set; }
 
+        public object? ManagerIdentity { get; private set; }
+
         public int InitializeCount { get; private set; }
 
         public Task InitializeAsync(
@@ -795,7 +843,14 @@ public sealed class FoundryLocalAdapterTests
             cancellationToken.ThrowIfCancellationRequested();
             InitializeCount++;
             IsInitialized = true;
+            ManagerIdentity = new object();
             return Task.CompletedTask;
+        }
+
+        public void RecreateExternally()
+        {
+            IsInitialized = true;
+            ManagerIdentity = new object();
         }
     }
 
