@@ -199,6 +199,47 @@ project keeps its source `ProjectReference` to the library; it does not fetch
 the published library to build. Future coordinated releases should update both
 package versions and the canonical manifest together.
 
+## Optional transcript processing boundary
+
+`src/AudioTranscriber.TranscriptProcessing` is an optional, model-independent
+boundary for consuming transcript JSON. It has no project or package dependency
+on `AudioTranscriber`, Whisper, Granite, Foundry Local, preview DataIngestion,
+or any model runtime, so applications can reference it without changing the
+core transcription dependency graph.
+
+The boundary exposes the versioned `TranscriptDocument` and
+`TranscriptSegment` contracts (`schemaVersion: "1.0"`), plus typed
+`TranscriptJsonReader`, `TranscriptNormalizer`, and `TranscriptJsonWriter`
+APIs. It also provides `TranscriptIngestionAdapter` and
+`TranscriptIngestionDocumentReader`, which compose the standard
+`Microsoft.Extensions.DataIngestion.Abstractions` `IngestionDocument`,
+section, and paragraph types without replacing the transcript-specific JSON
+contract. Typed document and segment metadata preserve timing, speaker,
+confidence, source IDs, original ordinals, source metadata, and provenance
+across that boundary. The reader applies the same deterministic normalization
+as the public normalizer and accepts a
+versioned document object and the existing renderer's legacy document array.
+It reads from a `Stream` or file, validates required and unknown properties,
+normalizes text and timestamps, and fails atomically with
+`TranscriptFormatException` containing a stable error code and JSON path.
+Speaker, confidence, source IDs, source metadata, provenance metadata, and
+original ordinals are retained. When an input omits source IDs, segment IDs
+are deterministic hashes of the normalized segment values and original
+ordinal; input order is retained when ordinals are absent and explicit
+ordinals determine canonical order when present.
+
+Segment text must contain non-whitespace content. Normalization trims and
+collapses Unicode whitespace within each fragment without merging fragments.
+Timestamps are non-negative
+`HH:MM:SS[.fffffff]` values with monotonic starts and `end > start`.
+Adjacent segments and legitimate gaps are accepted; overlaps are rejected.
+Fragments are normalized but never merged. The current `AudioTranscriber`
+transcript models and JSON renderer remain unchanged for backward
+compatibility. The DataIngestion abstraction source is vendored under
+`src/Vendored/dotnet-extensions` from the `data-ingestion-preview2` branch at
+commit `e124c123afeeda2f271f3b99a70eb3cfe187a471`; see its `VENDORED.md` for
+the MIT attribution and the intentionally deferred higher pipeline boundary.
+
 ## Clean local-tool installation
 
 Create a package and install it into a temporary tool manifest without changing

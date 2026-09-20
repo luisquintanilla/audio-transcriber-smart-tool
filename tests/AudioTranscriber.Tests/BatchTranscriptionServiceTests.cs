@@ -59,6 +59,42 @@ public sealed class BatchTranscriptionServiceTests
     }
 
     [Fact]
+    public async Task TranscribeAsync_rejects_segment_one_tick_beyond_audio_duration()
+    {
+        var path = TestAudio.CreateWav(sampleCount: 1600);
+        try
+        {
+            var exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                new BatchTranscriptionService(new OneTickBeyondDurationEngine()).TranscribeAsync([path]));
+
+            Assert.Contains("ends after the audio duration", exception.Message);
+        }
+        finally
+        {
+            TestAudio.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_accepts_segment_ending_exactly_at_audio_duration()
+    {
+        var path = TestAudio.CreateWav(sampleCount: 1600);
+        try
+        {
+            var result = await new BatchTranscriptionService(new ExactDurationEngine()).TranscribeAsync([path]);
+
+            var segment = Assert.Single(result.Transcripts[0].Segments);
+            Assert.Equal(TimeSpan.Zero, segment.Start);
+            Assert.Equal(TimeSpan.FromMilliseconds(100), segment.End);
+            Assert.Equal("full duration", segment.Text);
+        }
+        finally
+        {
+            TestAudio.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task TranscribeAsync_rejects_overlapping_engine_segments()
     {
         var path = TestAudio.CreateWav(sampleCount: 1600);
@@ -68,6 +104,45 @@ public sealed class BatchTranscriptionServiceTests
                 new BatchTranscriptionService(new OverlappingEngine()).TranscribeAsync([path]));
 
             Assert.Contains("overlap", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            TestAudio.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_accepts_adjacent_non_overlapping_segments_without_merging()
+    {
+        var path = TestAudio.CreateWav(sampleCount: 1600);
+        try
+        {
+            var result = await new BatchTranscriptionService(new AdjacentEngine()).TranscribeAsync([path]);
+
+            Assert.Equal(2, result.Transcripts[0].Segments.Count);
+            Assert.Equal(["first fragment", "second fragment"], result.Transcripts[0].Segments.Select(segment => segment.Text));
+            Assert.Equal("first fragment second fragment", result.Transcripts[0].Text);
+            Assert.Equal(TimeSpan.FromMilliseconds(50), result.Transcripts[0].Segments[1].Start);
+        }
+        finally
+        {
+            TestAudio.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_accepts_legitimate_gaps_between_non_overlapping_segments()
+    {
+        var path = TestAudio.CreateWav(sampleCount: 1600);
+        try
+        {
+            var result = await new BatchTranscriptionService(new GappedEngine()).TranscribeAsync([path]);
+            var segments = result.Transcripts[0].Segments;
+
+            Assert.Equal(2, segments.Count);
+            Assert.Equal(TimeSpan.FromMilliseconds(25), segments[0].End);
+            Assert.Equal(TimeSpan.FromMilliseconds(50), segments[1].Start);
+            Assert.Equal(["before gap", "after gap"], segments.Select(segment => segment.Text));
         }
         finally
         {
@@ -212,6 +287,75 @@ public sealed class BatchTranscriptionServiceTests
             return ValueTask.FromResult<IReadOnlyList<TranscriptSegment>>(
                 [new TranscriptSegment("transcribed", TimeSpan.Zero, end)]);
         }
+    }
+
+    private sealed class OneTickBeyondDurationEngine : ITranscriptionEngine
+    {
+        public ModelProvenance Provenance => TranscriptModelsTests.TestProvenance();
+
+        public ValueTask<IReadOnlyList<TranscriptSegment>> TranscribeAsync(
+            AudioClip audio,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<TranscriptSegment>>(
+            [
+                new TranscriptSegment(
+                    "too long",
+                    TimeSpan.Zero,
+                    audio.Duration + TimeSpan.FromTicks(1))
+            ]);
+    }
+
+    private sealed class ExactDurationEngine : ITranscriptionEngine
+    {
+        public ModelProvenance Provenance => TranscriptModelsTests.TestProvenance();
+
+        public ValueTask<IReadOnlyList<TranscriptSegment>> TranscribeAsync(
+            AudioClip audio,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<TranscriptSegment>>(
+            [
+                new TranscriptSegment("full duration", TimeSpan.Zero, audio.Duration)
+            ]);
+    }
+
+    private sealed class AdjacentEngine : ITranscriptionEngine
+    {
+        public ModelProvenance Provenance => TranscriptModelsTests.TestProvenance();
+
+        public ValueTask<IReadOnlyList<TranscriptSegment>> TranscribeAsync(
+            AudioClip audio,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<TranscriptSegment>>(
+            [
+                new TranscriptSegment(
+                    " first fragment ",
+                    TimeSpan.Zero,
+                    TimeSpan.FromMilliseconds(50)),
+                new TranscriptSegment(
+                    "second fragment",
+                    TimeSpan.FromMilliseconds(50),
+                    audio.Duration)
+            ]);
+    }
+
+    private sealed class GappedEngine : ITranscriptionEngine
+    {
+        public ModelProvenance Provenance => TranscriptModelsTests.TestProvenance();
+
+        public ValueTask<IReadOnlyList<TranscriptSegment>> TranscribeAsync(
+            AudioClip audio,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<TranscriptSegment>>(
+            [
+                new TranscriptSegment(
+                    "before gap",
+                    TimeSpan.Zero,
+                    TimeSpan.FromMilliseconds(25)),
+                new TranscriptSegment(
+                    "after gap",
+                    TimeSpan.FromMilliseconds(50),
+                    TimeSpan.FromMilliseconds(75))
+            ]);
     }
 
     private sealed class RecordingEngine : ITranscriptionEngine

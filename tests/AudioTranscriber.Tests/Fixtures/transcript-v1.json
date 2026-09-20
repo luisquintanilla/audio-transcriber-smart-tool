@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1.0",
+  "source": "meeting.wav",
+  "provenance": {
+    "provider": "fixture-provider",
+    "model": "fixture-model",
+    "packageId": "fixture.package",
+    "packageVersion": "2.4.1",
+    "source": "offline-fixture",
+    "cachePath": "fixture-cache",
+    "metadata": {
+      "adapter": "fixture-adapter",
+      "run": "stable"
+    }
+  },
+  "segments": [
+    {
+      "start": "00:00:00.1250000",
+      "end": "00:00:01.5000000",
+      "text": "  Hello there  ",
+      "speaker": " speaker-a ",
+      "confidence": 0.875,
+      "sourceMetadata": {
+        "channel": "left",
+        "rawId": "fragment-a"
+      }
+    },
+    {
+      "originalOrdinal": 4,
+      "start": "00:00:02.0000000",
+      "end": "00:00:03.0000001",
+      "text": "second fragment",
+      "sourceMetadata": {
+        "channel": "right"
+      }
+    }
+  ]
+}
