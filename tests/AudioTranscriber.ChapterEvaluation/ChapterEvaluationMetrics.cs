@@ -448,6 +448,9 @@ public static class ChapterEvaluationMetricCalculator
     private static ChapterEvaluationPrediction[] NormalizePredictions(
         IEnumerable<ChapterEvaluationPrediction> predictions) =>
         predictions
+            .Select(prediction => prediction ?? throw new ArgumentException(
+                "Predictions cannot contain null entries.",
+                nameof(predictions)))
             .OrderBy(prediction => prediction.Start)
             .ThenBy(prediction => prediction.End)
             .ThenBy(prediction => prediction.Id, StringComparer.Ordinal)

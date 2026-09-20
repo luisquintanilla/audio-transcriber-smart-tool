@@ -375,8 +375,13 @@ public sealed class DeterministicTranscriptEmbeddingGenerator
         return Task.FromResult(embeddings);
     }
 
-    public object? GetService(Type serviceType, object? serviceKey = null) =>
-        serviceKey is null && serviceType.IsInstanceOfType(this) ? this : null;
+    public object? GetService(Type serviceType, object? serviceKey = null)
+    {
+        ArgumentNullException.ThrowIfNull(serviceType);
+        return serviceKey is null && serviceType.IsInstanceOfType(this)
+            ? this
+            : null;
+    }
 
     public void Dispose()
     {

@@ -829,6 +829,28 @@ public sealed class ChapterEvaluationTests
         Assert.Equal(0, metrics.SourceSegmentIdMismatchCount);
     }
 
+    [Fact]
+    public void Metrics_RejectNullPredictionEntries()
+    {
+        var fixture = LoadFixture("product-launch.json");
+        var predictions = new ChapterEvaluationPrediction?[] { null };
+
+        var exception = Assert.Throws<ArgumentException>(
+            () => ChapterEvaluationMetricCalculator.Evaluate(
+                fixture,
+                predictions!));
+
+        Assert.Contains("null entries", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EmbeddingGenerator_RejectsNullServiceType()
+    {
+        using var generator = new DeterministicTranscriptEmbeddingGenerator();
+
+        Assert.Throws<ArgumentNullException>(() => generator.GetService(null!));
+    }
+
     private static ChapterEvaluationFixture[] LoadFixtures()
     {
         return new[]
