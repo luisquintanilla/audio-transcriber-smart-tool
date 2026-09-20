@@ -16,6 +16,8 @@ namespace AudioTranscriber.TranscriptProcessing;
 /// </remarks>
 public sealed class TranscriptChunkBuilder
 {
+    private const long MaximumGapWindowCount = 10_000;
+
     private readonly IEmbeddingGenerator<TextContent, Embedding<float>>? embeddingGenerator;
     private readonly ITranscriptChunkScoringProvider? scoringProvider;
 
@@ -257,6 +259,12 @@ public sealed class TranscriptChunkBuilder
 
         var windowCount = duration.Ticks / maximumDuration.Ticks +
             (duration.Ticks % maximumDuration.Ticks == 0 ? 0 : 1);
+        if (windowCount > MaximumGapWindowCount)
+        {
+            throw new InvalidOperationException(
+                "Transcript gap exceeds the maximum number of chunk windows.");
+        }
+
         var ticksPerWindow = duration.Ticks / windowCount;
         var remainder = duration.Ticks % windowCount;
         var windowStart = start;

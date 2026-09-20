@@ -10,7 +10,7 @@ namespace AudioTranscriber.Cli;
 public sealed class CliApplication
 {
     private static readonly StringComparison FilePathComparison =
-        OperatingSystem.IsWindows()
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
 

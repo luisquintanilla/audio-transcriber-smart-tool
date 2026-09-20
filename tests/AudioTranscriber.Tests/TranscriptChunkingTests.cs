@@ -454,6 +454,30 @@ public sealed class TranscriptChunkingTests
     }
 
     [Fact]
+    public void Build_RejectsGapThatWouldCreateTooManyWindows()
+    {
+        var first = Segment(
+            "before the pause",
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(1),
+            ordinal: 0);
+        var second = Segment(
+            "after the pause",
+            TimeSpan.FromTicks(TimeSpan.FromSeconds(1).Ticks + 10_001),
+            TimeSpan.FromTicks(TimeSpan.FromSeconds(1).Ticks + 10_002),
+            ordinal: 1);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => CreateBuilder().Build(
+                CreateDocument(first, second),
+                CreateOptions(
+                    minimumDuration: TimeSpan.FromSeconds(1),
+                    maximumDuration: TimeSpan.FromTicks(1))));
+
+        Assert.Contains("maximum number of chunk windows", exception.Message);
+    }
+
+    [Fact]
     public void Build_GapAtChunkBoundary_ClipsGapToRequestedRange()
     {
         var first = Segment(
