@@ -9,7 +9,7 @@ public sealed class TranscriptChapterEnrichmentException : InvalidOperationExcep
     public TranscriptChapterEnrichmentException(
         string chapterId,
         string code,
-        Exception? innerException)
+        Exception? innerException = null)
         : this(chapterId, code, message: null, innerException)
     {
     }
@@ -17,8 +17,8 @@ public sealed class TranscriptChapterEnrichmentException : InvalidOperationExcep
     public TranscriptChapterEnrichmentException(
         string chapterId,
         string code,
-        string? message = null,
-        Exception? innerException = null)
+        string? message,
+        Exception? innerException)
         : base(
             message ?? $"Chapter enrichment failed for '{chapterId}' ({code}).",
             innerException)

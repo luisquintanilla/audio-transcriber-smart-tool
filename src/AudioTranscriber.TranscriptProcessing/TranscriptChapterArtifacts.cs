@@ -660,6 +660,14 @@ public sealed class TranscriptChapterArtifactGenerator
                 var title = RequiredString(root, "title", path);
                 var start = RequiredTimestamp(root, "start", path);
                 var end = RequiredTimestamp(root, "end", path);
+                if (end <= start)
+                {
+                    throw Failure(
+                        "invalid_source_segment_interval",
+                        path,
+                        "Source segment end must be after its start.");
+                }
+
                 var text = RequiredString(root, "text", path);
                 var score = OptionalNumber(root, "score", path);
                 var boundary = ParseBoundary(
@@ -875,12 +883,17 @@ public sealed class TranscriptChapterArtifactGenerator
                                 pair.Key,
                                 pair.Value)))
                     .ToArray();
-                if (sourceMetadata.Count != expectedMetadata.Length ||
-                    sourceMetadata.Any(
-                        entry => !expectedMetadata.Any(
-                            expected => expected.SourceSegmentId == entry.SourceSegmentId &&
-                                        expected.Key == entry.Key &&
-                                        expected.Value == entry.Value)))
+                var actualMetadata = sourceMetadata
+                    .OrderBy(entry => entry.SourceSegmentId, StringComparer.Ordinal)
+                    .ThenBy(entry => entry.Key, StringComparer.Ordinal)
+                    .ThenBy(entry => entry.Value, StringComparer.Ordinal)
+                    .ToArray();
+                var orderedExpectedMetadata = expectedMetadata
+                    .OrderBy(entry => entry.SourceSegmentId, StringComparer.Ordinal)
+                    .ThenBy(entry => entry.Key, StringComparer.Ordinal)
+                    .ThenBy(entry => entry.Value, StringComparer.Ordinal)
+                    .ToArray();
+                if (!actualMetadata.SequenceEqual(orderedExpectedMetadata))
                 {
                     throw Failure(
                         "source_metadata_mismatch",
@@ -986,13 +999,24 @@ public sealed class TranscriptChapterArtifactGenerator
                         "Chapter artifacts require boundaries snapped to complete source segments.");
                 }
 
-                return new TranscriptChapterBoundaryMetadata(
-                    RequiredString(root, "startSegmentId", path),
-                    RequiredString(root, "endSegmentId", path),
-                    RequiredInt32(root, "startOriginalOrdinal", path),
-                    RequiredInt32(root, "endOriginalOrdinal", path),
-                    OptionalTimestamp(root, "gapBefore", path),
-                    OptionalTimestamp(root, "gapAfter", path));
+                try
+                {
+                    return new TranscriptChapterBoundaryMetadata(
+                        RequiredString(root, "startSegmentId", path),
+                        RequiredString(root, "endSegmentId", path),
+                        RequiredInt32(root, "startOriginalOrdinal", path),
+                        RequiredInt32(root, "endOriginalOrdinal", path),
+                        OptionalTimestamp(root, "gapBefore", path),
+                        OptionalTimestamp(root, "gapAfter", path));
+                }
+                catch (ArgumentException exception)
+                {
+                    throw Failure(
+                        "invalid_boundary",
+                        path,
+                        "Boundary metadata is invalid.",
+                        exception);
+                }
             }
 
             private static IReadOnlyList<TranscriptChapterSourceMetadata> ParseSourceMetadata(
@@ -1009,7 +1033,7 @@ public sealed class TranscriptChapterArtifactGenerator
                         new TranscriptChapterSourceMetadata(
                             RequiredString(root, "sourceSegmentId", itemPath),
                             RequiredString(root, "key", itemPath),
-                            RequiredString(root, "value", itemPath)));
+                            RequiredMetadataString(root, "value", itemPath)));
                 }
 
                 return entries;
@@ -1095,8 +1119,7 @@ public sealed class TranscriptChapterArtifactGenerator
                 string propertyName,
                 string path)
             {
-                if (!root.TryGetProperty(propertyName, out var value) ||
-                    value.ValueKind == JsonValueKind.Null)
+                if (!root.TryGetProperty(propertyName, out var value))
                 {
                     return null;
                 }
@@ -1112,6 +1135,24 @@ public sealed class TranscriptChapterArtifactGenerator
                 return string.IsNullOrWhiteSpace(value.GetString())
                     ? null
                     : value.GetString()!.Trim();
+            }
+
+            private static string RequiredMetadataString(
+                JsonElement root,
+                string propertyName,
+                string path)
+            {
+                if (!root.TryGetProperty(propertyName, out var value) ||
+                    value.ValueKind != JsonValueKind.String ||
+                    value.GetString() is null)
+                {
+                    throw Failure(
+                        $"invalid_{propertyName}",
+                        $"{path}.{propertyName}",
+                        $"Expected '{propertyName}' to be a string.");
+                }
+
+                return value.GetString()!;
             }
 
             private static IReadOnlyList<string> RequiredStringArray(
@@ -1214,12 +1255,18 @@ public sealed class TranscriptChapterArtifactGenerator
 
             private static TimeSpan ParseTimestamp(string value, string path)
             {
-                if (!TimeSpan.TryParseExact(
-                        value,
-                        "c",
+                var parts = value.Split(':');
+                if (parts.Length != 3 ||
+                    !long.TryParse(
+                        parts[0],
+                        NumberStyles.None,
                         CultureInfo.InvariantCulture,
-                        out var timestamp) ||
-                    timestamp < TimeSpan.Zero)
+                        out var hours) ||
+                    !int.TryParse(
+                        parts[1],
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out var minutes))
                 {
                     throw Failure(
                         "invalid_timestamp",
@@ -1227,8 +1274,62 @@ public sealed class TranscriptChapterArtifactGenerator
                         "Timestamps must use invariant duration format 'c' and be non-negative.");
                 }
 
-                return timestamp;
+                var secondsParts = parts[2].Split('.', 2);
+                if (!int.TryParse(
+                        secondsParts[0],
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out var seconds) ||
+                    hours < 0 ||
+                    minutes is < 0 or >= 60 ||
+                    seconds is < 0 or >= 60)
+                {
+                    throw Failure(
+                        "invalid_timestamp",
+                        path,
+                        "Timestamps must use invariant duration format 'c' and be non-negative.");
+                }
+
+                var fraction = secondsParts.Length == 2
+                    ? secondsParts[1]
+                    : string.Empty;
+                if ((secondsParts.Length == 2 && fraction.Length == 0) ||
+                    fraction.Length > 7 ||
+                    (fraction.Length > 0 &&
+                     !fraction.All(character => character is >= '0' and <= '9')))
+                {
+                    throw Failure(
+                        "invalid_timestamp",
+                        path,
+                        "Timestamps must use invariant duration format 'c' and be non-negative.");
+                }
+
+                try
+                {
+                    var ticks = checked(
+                        (hours * TimeSpan.TicksPerHour) +
+                        (minutes * TimeSpan.TicksPerMinute) +
+                        (seconds * TimeSpan.TicksPerSecond) +
+                        FractionTicks(fraction));
+                    return new TimeSpan(ticks);
+                }
+                catch (OverflowException exception)
+                {
+                    throw Failure(
+                        "invalid_timestamp",
+                        path,
+                        "Timestamp is outside the supported range.",
+                        exception);
+                }
             }
+
+            private static long FractionTicks(string fraction) =>
+                fraction.Length == 0
+                    ? 0
+                    : long.Parse(
+                        fraction.PadRight(7, '0'),
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture);
 
             private static void RequireKnownProperties(
                 JsonElement root,

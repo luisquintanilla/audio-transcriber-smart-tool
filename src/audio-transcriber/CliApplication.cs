@@ -943,11 +943,7 @@ public sealed class CliApplication
                     break;
                 case "--failure-policy":
                     if (++index >= args.Length ||
-                        !Enum.TryParse(
-                            args[index],
-                            ignoreCase: true,
-                            out failurePolicy) ||
-                        !Enum.IsDefined(failurePolicy))
+                        !TryParseFailurePolicy(args[index], out failurePolicy))
                     {
                         options = default!;
                         error = "--failure-policy must be fail-fast or preserve-partial.";
@@ -999,6 +995,29 @@ public sealed class CliApplication
             overwrite);
         error = string.Empty;
         return true;
+    }
+
+    private static bool TryParseFailurePolicy(
+        string value,
+        out TranscriptChapterEnrichmentFailurePolicy failurePolicy)
+    {
+        if (value.Equals("fail-fast", StringComparison.OrdinalIgnoreCase))
+        {
+            failurePolicy = TranscriptChapterEnrichmentFailurePolicy.FailFast;
+            return true;
+        }
+
+        if (value.Equals("preserve-partial", StringComparison.OrdinalIgnoreCase))
+        {
+            failurePolicy = TranscriptChapterEnrichmentFailurePolicy.PreservePartial;
+            return true;
+        }
+
+        return Enum.TryParse(
+                value,
+                ignoreCase: true,
+                out failurePolicy) &&
+            Enum.IsDefined(failurePolicy);
     }
 
     private static bool TryParseDuration(string value, out TimeSpan duration)

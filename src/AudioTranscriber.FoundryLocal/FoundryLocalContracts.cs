@@ -140,8 +140,8 @@ public sealed record FoundryLocalEnrichmentOptions
         {
             throw new ArgumentException(
                 $"Foundry Local enrichment requires the exact model " +
-                $"'{FoundryLocalModelContract.RequiredModelAlias}'; variants and " +
-                "provider fallbacks are not supported.",
+                $"'{FoundryLocalModelContract.RequiredModelAlias}'; no variant or " +
+                "provider fallback is supported.",
                 nameof(ModelAlias));
         }
 

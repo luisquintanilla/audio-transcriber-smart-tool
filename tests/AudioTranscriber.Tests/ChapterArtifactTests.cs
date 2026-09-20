@@ -119,6 +119,37 @@ public sealed class ChapterArtifactTests
     }
 
     [Fact]
+    public async Task Reader_round_trips_total_hour_timestamps_and_empty_metadata_values()
+    {
+        var original = new Processing.TranscriptChapterArtifactGenerator()
+            .Generate(
+                CreateChunkBuilder().Build(
+                    CreateDocument(
+                        Segment(
+                            "long recording",
+                            24 * 60 * 60,
+                            25 * 60 * 60,
+                            0,
+                            id: "segment-long",
+                            metadata: new Dictionary<string, string>
+                            {
+                                ["empty"] = string.Empty,
+                                ["whitespace"] = "  preserved  "
+                            })),
+                    CreateOptions()));
+        var json = new Processing.TranscriptChapterArtifactGenerator()
+            .Serialize(original);
+
+        var roundTripped = await new Processing.TranscriptChapterArtifactReader()
+            .ReadDocumentAsync(
+                new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json)));
+
+        var metadata = Assert.Single(roundTripped).SourceSegments[0].SourceMetadata;
+        Assert.Equal(string.Empty, metadata["empty"]);
+        Assert.Equal("  preserved  ", metadata["whitespace"]);
+    }
+
+    [Fact]
     public async Task Reader_rejects_schema_1_0_with_regeneration_guidance()
     {
         var artifact = new Processing.TranscriptChapterArtifactGenerator()

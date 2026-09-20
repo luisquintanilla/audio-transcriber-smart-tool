@@ -26,7 +26,6 @@ public static class FoundryLocalResponseParser
         string response,
         TranscriptChapterArtifact chapter)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(response);
         ArgumentNullException.ThrowIfNull(chapter);
 
         using var document = ParseDocument(response);
@@ -76,7 +75,6 @@ public static class FoundryLocalResponseParser
         string response,
         TranscriptOverallSummaryRequest request)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(response);
         ArgumentNullException.ThrowIfNull(request);
 
         using var document = ParseDocument(response);
@@ -149,7 +147,7 @@ public static class FoundryLocalResponseParser
             {
                 throw Invalid(
                     "unknown_evidence_segment_ref",
-                    $"Evidence reference '{segmentRef}' is not part of the chapter request.");
+                    "The response contained an evidence reference that is not part of the chapter request.");
             }
 
             values.Add(
@@ -165,7 +163,13 @@ public static class FoundryLocalResponseParser
 
     public static string ExtractJsonEnvelope(string response)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(response);
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            throw Invalid(
+                "invalid_response_envelope",
+                "The response must contain one complete JSON document.");
+        }
+
         var trimmed = response.Trim();
         if (trimmed.StartsWith("```", StringComparison.Ordinal))
         {
@@ -193,13 +197,6 @@ public static class FoundryLocalResponseParser
             }
 
             return body.Trim();
-        }
-
-        if (trimmed.Contains("```", StringComparison.Ordinal))
-        {
-            throw Invalid(
-                "invalid_response_envelope",
-                "The response must be raw JSON or exactly one complete json code fence.");
         }
 
         return trimmed;

@@ -173,6 +173,44 @@ public sealed class FoundryLocalAdapterTests
     }
 
     [Fact]
+    public void Parser_treats_empty_output_as_a_response_contract_failure()
+    {
+        var artifact = CreateArtifact(
+            Segment("parser input", 0, 1, 0, "segment-parser"));
+
+        var exception = Assert.Throws<FoundryLocalResponseException>(
+            () => FoundryLocalResponseParser.ParseChapterSummary(
+                " ",
+                Assert.Single(artifact)));
+
+        Assert.Equal("invalid_response_envelope", exception.Code);
+    }
+
+    [Fact]
+    public void Parser_allows_code_fence_text_inside_a_raw_json_string()
+    {
+        var artifact = CreateArtifact(
+            Segment("parser input", 0, 1, 0, "segment-parser"));
+        var response = JsonSerializer.Serialize(
+            new
+            {
+                schemaVersion = "2.0",
+                kind = "chapter",
+                chapterRef = "c1",
+                summary = "The markdown ```json fence is discussed here.",
+                title = (string?)null,
+                keywords = new[] { "topic" },
+                evidence = Array.Empty<object>()
+            });
+
+        var parsed = FoundryLocalResponseParser.ParseChapterSummary(
+            response,
+            Assert.Single(artifact));
+
+        Assert.Contains("```json", parsed.Summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Provider_passes_explicit_model_timeout_and_provenance()
     {
         var artifact = CreateArtifact(
@@ -704,7 +742,7 @@ public sealed class FoundryLocalAdapterTests
     }
 
     [Fact]
-    public void Model_selection_does_not_select_catalog_variants()
+    public void Model_selection_accepts_exact_catalog_ids_for_variants()
     {
         var variant = new FakeCatalogModel("variant-id", "model-variant");
         var model = new FakeCatalogModel(
@@ -716,7 +754,18 @@ public sealed class FoundryLocalAdapterTests
             [model],
             "variant-id");
 
-        Assert.Null(selected);
+        Assert.Same(variant, selected);
+    }
+
+    [Fact]
+    public void Multimodal_models_are_chat_capable()
+    {
+        var model = new FakeCatalogModel(
+            "multimodal-id",
+            "multimodal",
+            task: "Multimodal");
+
+        Assert.True(FoundryLocalSdkRuntime.IsChatModel(model));
     }
 
     [Fact]
@@ -1072,20 +1121,30 @@ public sealed class FoundryLocalAdapterTests
             string alias,
             IReadOnlyList<Microsoft.AI.Foundry.Local.IModel>? variants = null,
             bool isCached = false,
-            bool isLoaded = false)
+            bool isLoaded = false,
+            string task = "chat-completion")
         {
             Id = id;
             Alias = alias;
             Variants = variants ?? [];
             IsCached = isCached;
             IsLoaded = isLoaded;
+            Info = new Microsoft.AI.Foundry.Local.ModelInfo
+            {
+                Id = id,
+                Name = alias,
+                Alias = alias,
+                ProviderType = "test",
+                Uri = "https://example.invalid/model",
+                ModelType = "test",
+                Task = task
+            };
         }
         public string Id { get; }
 
         public string Alias { get; }
 
-        public Microsoft.AI.Foundry.Local.ModelInfo Info =>
-            throw new NotSupportedException();
+        public Microsoft.AI.Foundry.Local.ModelInfo Info { get; }
 
         public IReadOnlyList<Microsoft.AI.Foundry.Local.IModel> Variants { get; }
 
