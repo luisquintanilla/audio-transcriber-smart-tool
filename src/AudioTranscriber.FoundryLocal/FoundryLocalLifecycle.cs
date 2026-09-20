@@ -9,7 +9,7 @@ internal interface IFoundryLocalManagerHost
 
     object? ManagerIdentity { get; }
 
-    Task InitializeAsync(
+    Task<object?> InitializeAsync(
         FoundryLocalEnrichmentOptions options,
         CancellationToken cancellationToken);
 }
@@ -21,10 +21,11 @@ internal sealed class FoundryLocalManagerHost : IFoundryLocalManagerHost
     public object? ManagerIdentity =>
         IsInitialized ? FoundryLocalManager.Instance : null;
 
-    public Task InitializeAsync(
+    public async Task<object?> InitializeAsync(
         FoundryLocalEnrichmentOptions options,
-        CancellationToken cancellationToken) =>
-        FoundryLocalManager.CreateAsync(
+        CancellationToken cancellationToken)
+    {
+        await FoundryLocalManager.CreateAsync(
             new Configuration
             {
                 AppName = FoundryLocalManagerConfigurationRegistry
@@ -32,7 +33,9 @@ internal sealed class FoundryLocalManagerHost : IFoundryLocalManagerHost
                 ModelCacheDir = options.ModelCacheDirectory
             },
             NullLogger.Instance,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+        return ManagerIdentity;
+    }
 }
 
 internal sealed class FoundryLocalManagerConfigurationRegistry
@@ -94,11 +97,20 @@ internal sealed class FoundryLocalManagerConfigurationRegistry
                 return;
             }
 
-            await managerHost
+            var initializedManager = await managerHost
                 .InitializeAsync(options, cancellationToken)
                 .ConfigureAwait(false);
+            if (!ReferenceEquals(initializedManager, managerHost.ManagerIdentity))
+            {
+                throw new FoundryLocalProviderException(
+                    FoundryLocalDiagnosticCode.InvalidConfiguration,
+                    options.ModelAlias,
+                    "Foundry Local was recreated outside this adapter while " +
+                    "initialization was in progress; its configuration cannot be verified.");
+            }
+
             acceptedConfiguration = requested;
-            acceptedManager = managerHost.ManagerIdentity;
+            acceptedManager = initializedManager;
         }
         finally
         {

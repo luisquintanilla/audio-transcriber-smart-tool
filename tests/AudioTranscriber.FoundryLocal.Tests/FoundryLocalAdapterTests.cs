@@ -604,6 +604,22 @@ public sealed class FoundryLocalAdapterTests
     }
 
     [Fact]
+    public async Task Manager_configuration_rejects_recreation_during_initialization()
+    {
+        var host = new FakeManagerHost(recreateDuringInitialization: true);
+        var registry = new FoundryLocalManagerConfigurationRegistry(host);
+
+        var exception = await Assert.ThrowsAsync<FoundryLocalProviderException>(
+            () => registry.EnsureCompatibleAsync(
+                new FoundryLocalEnrichmentOptions("model"),
+                CancellationToken.None));
+
+        Assert.Equal(
+            FoundryLocalDiagnosticCode.InvalidConfiguration,
+            exception.DiagnosticCode);
+    }
+
+    [Fact]
     public void Manager_application_names_use_the_same_normalized_value()
     {
         Assert.Equal(
@@ -825,9 +841,14 @@ public sealed class FoundryLocalAdapterTests
 
     private sealed class FakeManagerHost : IFoundryLocalManagerHost
     {
-        public FakeManagerHost(bool isInitialized = false)
+        private readonly bool recreateDuringInitialization;
+
+        public FakeManagerHost(
+            bool isInitialized = false,
+            bool recreateDuringInitialization = false)
         {
             IsInitialized = isInitialized;
+            this.recreateDuringInitialization = recreateDuringInitialization;
         }
 
         public bool IsInitialized { get; private set; }
@@ -836,7 +857,7 @@ public sealed class FoundryLocalAdapterTests
 
         public int InitializeCount { get; private set; }
 
-        public Task InitializeAsync(
+        public Task<object?> InitializeAsync(
             FoundryLocalEnrichmentOptions options,
             CancellationToken cancellationToken)
         {
@@ -844,7 +865,13 @@ public sealed class FoundryLocalAdapterTests
             InitializeCount++;
             IsInitialized = true;
             ManagerIdentity = new object();
-            return Task.CompletedTask;
+            var initializedManager = ManagerIdentity;
+            if (recreateDuringInitialization)
+            {
+                RecreateExternally();
+            }
+
+            return Task.FromResult(initializedManager);
         }
 
         public void RecreateExternally()
