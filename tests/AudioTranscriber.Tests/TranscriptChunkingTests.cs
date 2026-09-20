@@ -471,7 +471,7 @@ public sealed class TranscriptChunkingTests
             () => CreateBuilder().Build(
                 CreateDocument(first, second),
                 CreateOptions(
-                    minimumDuration: TimeSpan.FromSeconds(1),
+                    minimumDuration: TimeSpan.FromTicks(1),
                     maximumDuration: TimeSpan.FromTicks(1))));
 
         Assert.Contains("maximum number of chunk windows", exception.Message);
