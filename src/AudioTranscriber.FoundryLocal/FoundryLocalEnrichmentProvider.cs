@@ -17,6 +17,7 @@ public sealed class FoundryLocalEnrichmentProvider
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private FoundryLocalRuntimeSession? session;
     private Task<FoundryLocalRuntimeSession>? sessionInitialization;
+    private CancellationTokenSource? initializationCancellation;
     private int activeOperations;
     private bool disposeRequested;
     private bool finalizationStarted;
@@ -206,17 +207,20 @@ public sealed class FoundryLocalEnrichmentProvider
     {
         var completion = new TaskCompletionSource<FoundryLocalRuntimeSession>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        _ = CompleteInitializationAsync(completion);
+        var cancellation = new CancellationTokenSource();
+        initializationCancellation = cancellation;
+        _ = CompleteInitializationAsync(completion, cancellation);
         return completion.Task;
     }
 
     private async Task CompleteInitializationAsync(
-        TaskCompletionSource<FoundryLocalRuntimeSession> completion)
+        TaskCompletionSource<FoundryLocalRuntimeSession> completion,
+        CancellationTokenSource cancellation)
     {
         try
         {
             var prepared = await runtime
-                .PrepareAsync(options, CancellationToken.None)
+                .PrepareAsync(options, cancellation.Token)
                 .ConfigureAwait(false);
             lock (lifecycleGate)
             {
@@ -235,6 +239,18 @@ public sealed class FoundryLocalEnrichmentProvider
             }
 
             completion.TrySetException(exception);
+        }
+        finally
+        {
+            lock (lifecycleGate)
+            {
+                if (ReferenceEquals(initializationCancellation, cancellation))
+                {
+                    initializationCancellation = null;
+                }
+            }
+
+            cancellation.Dispose();
         }
     }
 
@@ -314,6 +330,7 @@ public sealed class FoundryLocalEnrichmentProvider
             lock (lifecycleGate)
             {
                 initialization = sessionInitialization;
+                initializationCancellation?.Cancel();
             }
 
             if (initialization is not null)

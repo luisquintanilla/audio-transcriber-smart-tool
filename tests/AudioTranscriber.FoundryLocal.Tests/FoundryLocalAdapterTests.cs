@@ -386,6 +386,29 @@ public sealed class FoundryLocalAdapterTests
     }
 
     [Fact]
+    public async Task Dispose_cancels_initialization_after_waiters_leave()
+    {
+        var artifact = CreateArtifact(
+            Segment("initializing", 0, 1, 0, "segment-initializing"));
+        var runtime = new CancellingInitializationRuntime();
+        var provider = new FoundryLocalEnrichmentProvider(
+            new FoundryLocalEnrichmentOptions("chosen-model"),
+            runtime);
+        using var cancellation = new CancellationTokenSource();
+
+        var enrichment = provider.EnrichAsync(
+            new TranscriptChapterEnrichmentRequest(Assert.Single(artifact)),
+            cancellation.Token).AsTask();
+        await runtime.InitializationStarted.Task;
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => enrichment);
+
+        await provider.DisposeAsync();
+
+        Assert.True(runtime.InitializationCancelled);
+    }
+
+    [Fact]
     public void Cache_directory_validation_rejects_package_root_and_descendants()
     {
         var packageRoot = Path.GetFullPath(AppContext.BaseDirectory);
@@ -1178,6 +1201,33 @@ public sealed class FoundryLocalAdapterTests
             cancellationToken.ThrowIfCancellationRequested();
             PrepareCount++;
             return Task.FromException<FoundryLocalRuntimeSession>(exception);
+        }
+    }
+
+    private sealed class CancellingInitializationRuntime : IFoundryLocalRuntime
+    {
+        public TaskCompletionSource InitializationStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool InitializationCancelled { get; private set; }
+
+        public async Task<FoundryLocalRuntimeSession> PrepareAsync(
+            FoundryLocalEnrichmentOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            InitializationStarted.SetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException) when (
+                cancellationToken.IsCancellationRequested)
+            {
+                InitializationCancelled = true;
+                throw;
+            }
+
+            throw new InvalidOperationException("Initialization completed unexpectedly.");
         }
     }
 
