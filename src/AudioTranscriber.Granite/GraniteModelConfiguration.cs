@@ -266,9 +266,12 @@ public static class GraniteCachePathResolver
             var component = components.Pop();
             var candidate = new DirectoryInfo(
                 Path.Combine(resolved.FullName, component));
-            if (candidate.ResolveLinkTarget(returnFinalTarget: false) is DirectoryInfo target)
+            if (candidate.LinkTarget is { } linkTarget)
             {
-                resolved = target;
+                var targetPath = Path.IsPathRooted(linkTarget)
+                    ? linkTarget
+                    : Path.Combine(candidate.Parent!.FullName, linkTarget);
+                resolved = new DirectoryInfo(Path.GetFullPath(targetPath));
                 continue;
             }
 
