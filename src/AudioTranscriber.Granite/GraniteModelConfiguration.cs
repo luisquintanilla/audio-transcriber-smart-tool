@@ -263,8 +263,21 @@ public static class GraniteCachePathResolver
         var resolved = directory.Root;
         while (components.Count > 0)
         {
+            var component = components.Pop();
             var candidate = new DirectoryInfo(
-                Path.Combine(resolved.FullName, components.Pop()));
+                Path.Combine(resolved.FullName, component));
+            if (!candidate.Exists)
+            {
+                resolved = candidate;
+                while (components.Count > 0)
+                {
+                    resolved = new DirectoryInfo(
+                        Path.Combine(resolved.FullName, components.Pop()));
+                }
+
+                break;
+            }
+
             resolved = candidate.ResolveLinkTarget(returnFinalTarget: true)
                 as DirectoryInfo ?? candidate;
         }
