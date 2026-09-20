@@ -27,6 +27,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Microsoft.Extensions.AI.Abs
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Microsoft.Extensions.DataIngestion.Abstractions", "src\Vendored\dotnet-extensions\src\Libraries\Microsoft.Extensions.DataIngestion.Abstractions\Microsoft.Extensions.DataIngestion.Abstractions.csproj", "{8725A996-2040-4239-9E5D-F2C748C71179}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioTranscriber.TranscriptIngestion", "src\AudioTranscriber.TranscriptIngestion\AudioTranscriber.TranscriptIngestion.csproj", "{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -109,6 +111,18 @@ Global
 		{8725A996-2040-4239-9E5D-F2C748C71179}.Release|x64.Build.0 = Release|Any CPU
 		{8725A996-2040-4239-9E5D-F2C748C71179}.Release|x86.ActiveCfg = Release|Any CPU
 		{8725A996-2040-4239-9E5D-F2C748C71179}.Release|x86.Build.0 = Release|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Debug|x64.Build.0 = Debug|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Debug|x86.Build.0 = Debug|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Release|x64.ActiveCfg = Release|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Release|x64.Build.0 = Release|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Release|x86.ActiveCfg = Release|Any CPU
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -124,5 +138,6 @@ Global
 		{D9C74C1F-9414-D4FA-667D-E5F2BCF45959} = {879F80E2-4420-D7E2-21F9-0B8223D671FD}
 		{1ACB4313-94FB-49E2-B36D-5DB29B5D0DCC} = {D9C74C1F-9414-D4FA-667D-E5F2BCF45959}
 		{8725A996-2040-4239-9E5D-F2C748C71179} = {D9C74C1F-9414-D4FA-667D-E5F2BCF45959}
+		{AECA50DC-EAAE-4DC7-AAB9-D6AD90FEBC36} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal
