@@ -65,6 +65,48 @@ public sealed class GraniteConfigurationTests
     }
 
     [Fact]
+    public void CacheResolver_RejectsSymlinkedCacheInsideRepository()
+    {
+        using var temporary = new GraniteTestDirectory();
+        var repositoryRoot = Path.Combine(temporary.Path, "repository");
+        Directory.CreateDirectory(repositoryRoot);
+        var cacheAlias = Path.Combine(temporary.Path, "cache-alias");
+        try
+        {
+            Directory.CreateSymbolicLink(cacheAlias, repositoryRoot);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        Assert.Throws<ArgumentException>(
+            () => GraniteCachePathResolver.Resolve(cacheAlias, repositoryRoot));
+    }
+
+    [Fact]
+    public void CacheResolver_RejectsDanglingSymlinkedCacheInsideRepository()
+    {
+        using var temporary = new GraniteTestDirectory();
+        var repositoryRoot = Path.Combine(temporary.Path, "repository");
+        Directory.CreateDirectory(repositoryRoot);
+        var cacheAlias = Path.Combine(temporary.Path, "cache-alias");
+        try
+        {
+            Directory.CreateSymbolicLink(
+                cacheAlias,
+                Path.Combine(repositoryRoot, "new-cache"));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        Assert.Throws<ArgumentException>(
+            () => GraniteCachePathResolver.Resolve(cacheAlias, repositoryRoot));
+    }
+
+    [Fact]
     public void Configuration_DefaultsToOfflineDeterministicMode()
     {
         using var temporary = new GraniteTestDirectory();

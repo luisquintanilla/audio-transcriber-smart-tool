@@ -454,7 +454,53 @@ public sealed class TranscriptChunkingTests
     }
 
     [Fact]
-    public void Build_GapAtChunkBoundary_PreservesGapSemantics()
+    public void Build_RejectsGapThatWouldCreateTooManyWindows()
+    {
+        var first = Segment(
+            "before the pause",
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(1),
+            ordinal: 0);
+        var second = Segment(
+            "after the pause",
+            TimeSpan.FromTicks(TimeSpan.FromSeconds(1).Ticks + 10_001),
+            TimeSpan.FromTicks(TimeSpan.FromSeconds(1).Ticks + 10_002),
+            ordinal: 1);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => CreateBuilder().Build(
+                CreateDocument(first, second),
+                CreateOptions(
+                    minimumDuration: TimeSpan.FromTicks(1),
+                    maximumDuration: TimeSpan.FromTicks(1))));
+
+        Assert.Contains("maximum number of chunk windows", exception.Message);
+    }
+
+    [Fact]
+    public void Build_RejectsRunThatWouldExceedPartitioningComplexity()
+    {
+        var segments = Enumerable.Range(0, 448)
+            .Select(
+                index => Segment(
+                    $"segment {index}",
+                    TimeSpan.FromTicks(index),
+                    TimeSpan.FromTicks(index + 1),
+                    ordinal: index))
+            .ToArray();
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => CreateBuilder().Build(
+                CreateDocument(segments),
+                CreateOptions(
+                    minimumDuration: TimeSpan.FromTicks(1),
+                    maximumDuration: TimeSpan.FromDays(1))));
+
+        Assert.Contains("maximum partitioning complexity", exception.Message);
+    }
+
+    [Fact]
+    public void Build_GapAtChunkBoundary_ClipsGapToRequestedRange()
     {
         var first = Segment(
             "first side",
@@ -479,9 +525,9 @@ public sealed class TranscriptChunkingTests
                 requestedEnd: TimeSpan.FromSeconds(3.5)));
 
         var gap = Assert.Single(result.Windows, window => window.IsGap);
-        Assert.Equal(TimeSpan.FromSeconds(1), gap.Start);
-        Assert.Equal(TimeSpan.FromSeconds(4), gap.End);
-        Assert.Equal(TimeSpan.FromSeconds(3), gap.End - gap.Start);
+        Assert.Equal(TimeSpan.FromSeconds(1.5), gap.Start);
+        Assert.Equal(TimeSpan.FromSeconds(3.5), gap.End);
+        Assert.Equal(TimeSpan.FromSeconds(2), gap.End - gap.Start);
         var onlyWindow = Assert.Single(result.Windows);
         Assert.True(onlyWindow.IsGap);
         Assert.Equal(string.Empty, onlyWindow.Text);

@@ -1,11 +1,19 @@
 using System.Security;
 using System.Text.Json;
 using AudioTranscriber;
+using AudioTranscriber.Granite;
+using AudioTranscriber.TranscriptProcessing;
+using Microsoft.Extensions.AI;
 
 namespace AudioTranscriber.Cli;
 
 public sealed class CliApplication
 {
+    private static readonly StringComparison FilePathComparison =
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
     private readonly ITranscriptionEngine _engine;
     private readonly WavAudioReader _audioReader;
     private readonly IAudioConversionService _conversionService;
@@ -70,6 +78,12 @@ public sealed class CliApplication
                     repositoryRoot ?? Directory.GetCurrentDirectory()).ConfigureAwait(false),
                 "transcribe" => await TranscribeAsync(args[1..], output, error, cancellationToken).ConfigureAwait(false),
                 "convert" => await ConvertAsync(args[1..], output, error, cancellationToken).ConfigureAwait(false),
+                "chapters" => await ChaptersAsync(
+                    args[1..],
+                    output,
+                    error,
+                    repositoryRoot ?? Directory.GetCurrentDirectory(),
+                    cancellationToken).ConfigureAwait(false),
                 _ => await WriteUsageErrorAsync(error).ConfigureAwait(false)
             };
         }
@@ -178,6 +192,186 @@ public sealed class CliApplication
             $"'{SafePathDisplay.Basename(result.OutputPath)}' as " +
             $"{result.SampleRate} Hz mono {result.BitsPerSample}-bit PCM WAV.").ConfigureAwait(false);
         return 0;
+    }
+
+    private static async Task<int> ChaptersAsync(
+        string[] args,
+        TextWriter output,
+        TextWriter error,
+        string repositoryRoot,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseChaptersOptions(args, out var options, out var parseError))
+        {
+            await error.WriteLineAsync($"error: {parseError}").ConfigureAwait(false);
+            return 2;
+        }
+
+        if (AreSameChapterInputAndOutput(options.InputPath, options.OutputPath))
+        {
+            await error.WriteLineAsync(
+                "error: chapter input and output must be different files: " +
+                $"'{SafePathDisplay.Basename(options.InputPath)}'.")
+                .ConfigureAwait(false);
+            return 1;
+        }
+
+        if (File.Exists(options.OutputPath) && !options.Overwrite)
+        {
+            await error.WriteLineAsync(
+                "error: chapter output already exists; pass --overwrite to replace it explicitly.")
+                .ConfigureAwait(false);
+            return 1;
+        }
+
+        TranscriptDocument document;
+        try
+        {
+            await using var input = new FileStream(
+                options.InputPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 4096,
+                options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+            document = await new TranscriptJsonReader()
+                .ReadDocumentAsync(input, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is FileNotFoundException or
+            DirectoryNotFoundException or
+            UnauthorizedAccessException or
+            IOException or
+            TranscriptFormatException)
+        {
+            var detail = exception is TranscriptFormatException formatException
+                ? $" ({formatException.Code} at {formatException.JsonPath})"
+                : string.Empty;
+            throw new InvalidDataException(
+                $"Transcript input could not be read{detail} from " +
+                $"'{SafePathDisplay.Basename(options.InputPath)}'.",
+                exception);
+        }
+
+        GraniteEmbeddingProvider? graniteProvider = null;
+        try
+        {
+            IEmbeddingGenerator<TextContent, Embedding<float>>? embeddingGenerator = null;
+            if (string.Equals(options.Provider, "granite", StringComparison.Ordinal))
+            {
+                var configuration = new GraniteModelConfiguration(
+                    options.CachePath,
+                    options.AllowNetworkDownload,
+                    options.RequireAvx2,
+                    repositoryRoot);
+                graniteProvider = await GraniteEmbeddingProvider
+                    .CreateAsync(
+                        configuration,
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+                embeddingGenerator = graniteProvider;
+            }
+
+            var generationOptions = new TranscriptChapterGenerationOptions
+            {
+                Provider = options.Provider,
+                MinimumDuration = options.MinimumDuration,
+                MaximumDuration = options.MaximumDuration,
+                ProviderConfiguration = CreateProviderConfiguration(options)
+            };
+            var documentGenerator = new TranscriptChapterGenerator(embeddingGenerator);
+            var artifact = await documentGenerator
+                .GenerateAsync(document, generationOptions, cancellationToken)
+                .ConfigureAwait(false);
+            try
+            {
+                await new TranscriptChapterArtifactFileWriter()
+                    .WriteAsync(
+                        options.OutputPath,
+                        artifact,
+                        options.Overwrite,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (
+                exception is IOException or
+                UnauthorizedAccessException or
+                DirectoryNotFoundException)
+            {
+                throw new IOException(
+                    "Chapter output could not be written to " +
+                    $"'{SafePathDisplay.Basename(options.OutputPath)}'.",
+                    exception);
+            }
+
+            await output.WriteLineAsync(
+                $"Wrote {artifact.Count} chapter(s) to " +
+                $"'{SafePathDisplay.Basename(options.OutputPath)}' " +
+                $"using {artifact.Generation.Provider}.").ConfigureAwait(false);
+            return 0;
+        }
+        finally
+        {
+            graniteProvider?.Dispose();
+        }
+    }
+
+    private static bool AreSameChapterInputAndOutput(
+        string inputPath,
+        string outputPath)
+    {
+        if (string.Equals(inputPath, outputPath, FilePathComparison))
+        {
+            return true;
+        }
+
+        var input = new FileInfo(inputPath);
+        var output = new FileInfo(outputPath);
+        if (!input.Exists || !output.Exists)
+        {
+            return false;
+        }
+
+        return string.Equals(
+            ResolveLinkTargetPath(input),
+            ResolveLinkTargetPath(output),
+            FilePathComparison);
+    }
+
+    private static string ResolveLinkTargetPath(FileInfo file) =>
+        ResolveFinalLinkTargetPath(
+            new FileInfo(
+                Path.Combine(
+                    ResolveDirectoryPath(file.Directory!),
+                    file.Name)));
+
+    private static string ResolveFinalLinkTargetPath(FileInfo file)
+    {
+        var target = file.ResolveLinkTarget(returnFinalTarget: true);
+        return target is null
+            ? file.FullName
+            : ResolveLinkTargetPath(new FileInfo(target.FullName));
+    }
+
+    private static string ResolveDirectoryPath(DirectoryInfo directory)
+    {
+        var components = new Stack<string>();
+        for (var current = directory; current.Parent is not null; current = current.Parent)
+        {
+            components.Push(current.Name);
+        }
+
+        var resolvedDirectory = directory.Root;
+        while (components.Count > 0)
+        {
+            var candidate = new DirectoryInfo(
+                Path.Combine(resolvedDirectory.FullName, components.Pop()));
+            resolvedDirectory = candidate.ResolveLinkTarget(returnFinalTarget: true)
+                as DirectoryInfo ?? candidate;
+        }
+
+        return resolvedDirectory.FullName;
     }
 
     private static bool TryParseTranscribeOptions(
@@ -318,6 +512,200 @@ public sealed class CliApplication
         return true;
     }
 
+    private static bool TryParseChaptersOptions(
+        string[] args,
+        out ChaptersOptions options,
+        out string error)
+    {
+        string? input = null;
+        string? output = null;
+        var provider = "deterministic";
+        var minimumDuration = TimeSpan.FromSeconds(30);
+        var maximumDuration = TimeSpan.FromMinutes(5);
+        string? cachePath = null;
+        var allowNetworkDownload = false;
+        var requireAvx2 = false;
+        var overwrite = false;
+
+        for (var index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--input":
+                    if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+                    {
+                        options = default!;
+                        error = "--input requires a transcript JSON path.";
+                        return false;
+                    }
+
+                    input = Path.GetFullPath(args[index]);
+                    break;
+                case "--output":
+                    if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+                    {
+                        options = default!;
+                        error = "--output requires a chapter JSON path.";
+                        return false;
+                    }
+
+                    output = Path.GetFullPath(args[index]);
+                    break;
+                case "--provider":
+                    if (++index >= args.Length ||
+                        !TryParseChapterProvider(args[index], out provider))
+                    {
+                        options = default!;
+                        error = "--provider must be deterministic or granite.";
+                        return false;
+                    }
+
+                    break;
+                case "--min-duration":
+                case "--minimum-duration":
+                    if (++index >= args.Length ||
+                        !TryParseDuration(args[index], out minimumDuration))
+                    {
+                        options = default!;
+                        error = "--min-duration must be a positive number of seconds.";
+                        return false;
+                    }
+
+                    break;
+                case "--max-duration":
+                case "--maximum-duration":
+                    if (++index >= args.Length ||
+                        !TryParseDuration(args[index], out maximumDuration))
+                    {
+                        options = default!;
+                        error = "--max-duration must be a positive number of seconds.";
+                        return false;
+                    }
+
+                    break;
+                case "--cache":
+                    if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+                    {
+                        options = default!;
+                        error = "--cache requires an external Granite cache path.";
+                        return false;
+                    }
+
+                    cachePath = Path.GetFullPath(args[index]);
+                    break;
+                case "--allow-network-download":
+                    allowNetworkDownload = true;
+                    break;
+                case "--require-avx2":
+                    requireAvx2 = true;
+                    break;
+                case "--overwrite":
+                    overwrite = true;
+                    break;
+                default:
+                    options = default!;
+                    error = $"Unknown chapters option: {args[index]}";
+                    return false;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            options = default!;
+            error = "A --input transcript JSON path is required.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            options = default!;
+            error = "A --output chapter JSON path is required.";
+            return false;
+        }
+
+        if (minimumDuration > maximumDuration)
+        {
+            options = default!;
+            error = "--min-duration cannot exceed --max-duration.";
+            return false;
+        }
+
+        if (!string.Equals(provider, "granite", StringComparison.Ordinal) &&
+            (cachePath is not null || allowNetworkDownload || requireAvx2))
+        {
+            options = default!;
+            error = "--cache, --allow-network-download, and --require-avx2 require --provider granite.";
+            return false;
+        }
+
+        options = new ChaptersOptions(
+            input,
+            output,
+            provider,
+            minimumDuration,
+            maximumDuration,
+            cachePath,
+            allowNetworkDownload,
+            requireAvx2,
+            overwrite);
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool TryParseChapterProvider(string value, out string provider)
+    {
+        provider = value.Trim().ToLowerInvariant();
+        return provider is "deterministic" or "granite";
+    }
+
+    private static bool TryParseDuration(string value, out TimeSpan duration)
+    {
+        if (!double.TryParse(
+                value,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var seconds) ||
+            !double.IsFinite(seconds) ||
+            seconds <= 0)
+        {
+            duration = default;
+            return false;
+        }
+
+        try
+        {
+            duration = TimeSpan.FromSeconds(seconds);
+            return duration > TimeSpan.Zero;
+        }
+        catch (OverflowException)
+        {
+            duration = default;
+            return false;
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string> CreateProviderConfiguration(
+        ChaptersOptions options)
+    {
+        var configuration = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (options.CachePath is not null)
+        {
+            configuration["cache"] = SafePathDisplay.Basename(options.CachePath);
+        }
+
+        if (options.AllowNetworkDownload)
+        {
+            configuration["allowNetworkDownload"] = "true";
+        }
+
+        if (options.RequireAvx2)
+        {
+            configuration["requireAvx2"] = "true";
+        }
+
+        return configuration;
+    }
+
     private static async Task<int> WriteUsageErrorAsync(TextWriter error)
     {
         await error.WriteLineAsync(SmartToolHelpRenderer.RenderUsage()).ConfigureAwait(false);
@@ -328,4 +716,15 @@ public sealed class CliApplication
         IReadOnlyList<string> Inputs,
         TranscriptOutputFormat Format,
         string? OutputPath);
+
+    private sealed record ChaptersOptions(
+        string InputPath,
+        string OutputPath,
+        string Provider,
+        TimeSpan MinimumDuration,
+        TimeSpan MaximumDuration,
+        string? CachePath,
+        bool AllowNetworkDownload,
+        bool RequireAvx2,
+        bool Overwrite);
 }

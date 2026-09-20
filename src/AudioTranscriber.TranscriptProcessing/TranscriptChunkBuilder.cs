@@ -16,6 +16,9 @@ namespace AudioTranscriber.TranscriptProcessing;
 /// </remarks>
 public sealed class TranscriptChunkBuilder
 {
+    private const long MaximumGapWindowCount = 10_000;
+    private const long MaximumPartitionCandidateCount = 100_000;
+
     private readonly IEmbeddingGenerator<TextContent, Embedding<float>>? embeddingGenerator;
     private readonly ITranscriptChunkScoringProvider? scoringProvider;
 
@@ -185,11 +188,25 @@ public sealed class TranscriptChunkBuilder
             {
                 AddRunWindows(result, input, run, options);
                 run.Clear();
+                var gapStart = TimeSpan.FromTicks(
+                    Math.Max(
+                        previousElement.Metadata.End.Ticks,
+                        requestedStart.Ticks));
+                var gapEnd = TimeSpan.FromTicks(
+                    Math.Min(
+                        element.Metadata.Start.Ticks,
+                        requestedEnd.Ticks));
+                if (gapEnd <= gapStart)
+                {
+                    previousElement = element;
+                    continue;
+                }
+
                 AddGapWindows(
                     result,
                     input.Document,
-                    previousElement.Metadata.End,
-                    element.Metadata.Start,
+                    gapStart,
+                    gapEnd,
                     options.MaximumDuration);
             }
 
@@ -243,6 +260,12 @@ public sealed class TranscriptChunkBuilder
 
         var windowCount = duration.Ticks / maximumDuration.Ticks +
             (duration.Ticks % maximumDuration.Ticks == 0 ? 0 : 1);
+        if (windowCount > MaximumGapWindowCount)
+        {
+            throw new InvalidOperationException(
+                "Transcript gap exceeds the maximum number of chunk windows.");
+        }
+
         var ticksPerWindow = duration.Ticks / windowCount;
         var remainder = duration.Ticks % windowCount;
         var windowStart = start;
@@ -269,6 +292,7 @@ public sealed class TranscriptChunkBuilder
 
         var best = new Partition?[run.Count + 1];
         best[0] = new Partition(0, 0, -1, 0);
+        var candidateCount = 0L;
 
         for (var start = 0; start < run.Count; start++)
         {
@@ -284,6 +308,12 @@ public sealed class TranscriptChunkBuilder
                 if (end > start && candidateDuration > options.MaximumDuration)
                 {
                     break;
+                }
+
+                if (++candidateCount > MaximumPartitionCandidateCount)
+                {
+                    throw new InvalidOperationException(
+                        "Transcript segments exceed the maximum partitioning complexity.");
                 }
 
                 var candidate = new Partition(

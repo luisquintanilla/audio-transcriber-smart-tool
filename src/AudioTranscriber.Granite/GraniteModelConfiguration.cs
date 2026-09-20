@@ -226,7 +226,10 @@ public static class GraniteCachePathResolver
                 "granite-embedding-278m-multilingual",
                 GraniteModelMetadata.Revision));
 
-        if (!string.IsNullOrWhiteSpace(repositoryRoot) && IsWithin(path, repositoryRoot))
+        if (!string.IsNullOrWhiteSpace(repositoryRoot) &&
+            IsWithin(
+                ResolveExistingDirectoryLinks(path),
+                ResolveExistingDirectoryLinks(repositoryRoot)))
         {
             throw new ArgumentException(
                 "Granite model assets must be cached outside the repository.",
@@ -246,6 +249,48 @@ public static class GraniteCachePathResolver
 
         return string.Equals(fullPath, fullRoot, StringComparison.OrdinalIgnoreCase) ||
             fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveExistingDirectoryLinks(string path)
+    {
+        var directory = new DirectoryInfo(Path.GetFullPath(path));
+        var components = new Stack<string>();
+        for (var current = directory; current.Parent is not null; current = current.Parent)
+        {
+            components.Push(current.Name);
+        }
+
+        var resolved = directory.Root;
+        while (components.Count > 0)
+        {
+            var component = components.Pop();
+            var candidate = new DirectoryInfo(
+                Path.Combine(resolved.FullName, component));
+            if (candidate.LinkTarget is { } linkTarget)
+            {
+                var targetPath = Path.IsPathRooted(linkTarget)
+                    ? linkTarget
+                    : Path.Combine(candidate.Parent!.FullName, linkTarget);
+                resolved = new DirectoryInfo(Path.GetFullPath(targetPath));
+                continue;
+            }
+
+            if (!candidate.Exists)
+            {
+                resolved = candidate;
+                while (components.Count > 0)
+                {
+                    resolved = new DirectoryInfo(
+                        Path.Combine(resolved.FullName, components.Pop()));
+                }
+
+                break;
+            }
+
+            resolved = candidate;
+        }
+
+        return resolved.FullName;
     }
 }
 

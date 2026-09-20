@@ -8,7 +8,7 @@
     <PackageId>AudioTranscriber</PackageId>
     <Version>0.1.1</Version>
     <Authors>luisquintanilla</Authors>
-    <Description>Typed .NET APIs for local audio preparation, Whisper speech transcription, and Smart Tool introspection.</Description>
+    <Description>Typed .NET APIs for local audio preparation, Whisper speech transcription, source-linked transcript chapters, and Smart Tool introspection.</Description>
     <RepositoryUrl>https://github.com/luisquintanilla/audio-transcriber-smart-tool</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl>https://github.com/luisquintanilla/audio-transcriber-smart-tool</PackageProjectUrl>

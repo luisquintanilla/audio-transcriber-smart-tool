@@ -407,3 +407,15 @@ The optional Granite provider now implements the finalized
 ordered `GeneratedEmbeddings<Embedding<float>>`. The focused suite verifies
 batch order, standard service discovery, cancellation, deterministic fakes,
 and failure propagation while retaining the four cache/runtime regressions.
+
+# Production chapters capability follow-up
+
+The production `chapters` layer is rebased onto the finalized canonical
+DataIngestion/TextContent/Embedding contracts. `TranscriptChapterGenerator`
+converts validated transcript JSON through `TranscriptIngestionAdapter` and
+delegates structural/provider-backed work to `TranscriptChunkBuilder`; it does
+not introduce a second embedding abstraction.
+
+The CLI now rejects identical normalized input/output paths before input
+processing and before the overwrite branch. The regression covers both default
+and explicit overwrite modes and verifies the source remains unchanged.
