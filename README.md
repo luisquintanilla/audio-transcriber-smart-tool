@@ -188,6 +188,26 @@ The runtime dependency's build assets flow to the consuming application so its
 architecture-specific native libraries are copied correctly. The library
 package does not repack them as flattened content files.
 
+### Optional Granite embeddings
+
+`src/AudioTranscriber.Granite` is a separate optional project/package that
+implements the standard `IEmbeddingGenerator<TextContent, Embedding<float>>`
+contract without adding Granite, ONNX Runtime, or tokenizer dependencies to
+the core `AudioTranscriber` package. It is pinned to IBM's
+`ibm-granite/granite-embedding-278m-multilingual` model at revision
+`a9cb5338491faf32b73dd17b714a31821c021bbf`, using the verified `model.onnx`
+and `sentencepiece.bpe.model` assets. The provider uses CLS pooling,
+768-dimensional output, and L2 normalization.
+
+Granite assets are resolved under an external, revision-specific cache path
+and are never included in source control or package content. Network downloads
+are disabled by default; callers must provision the pinned assets or
+explicitly opt in to downloading them. Cache verification checks the pinned
+SHA-256 values and reports missing, incompatible, hash-mismatched, or
+unsupported-CPU diagnostics before embedding. The ordinary test suite uses
+injected deterministic tokenizer/runtime doubles and does not load or download
+the real model.
+
 To create the library package from Git:
 
 ```powershell
