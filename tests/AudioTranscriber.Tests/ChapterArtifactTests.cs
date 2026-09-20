@@ -330,12 +330,13 @@ public sealed class ChapterArtifactTests
                 segments));
     }
 
-    private static Processing.TranscriptChunkingOptions CreateOptions()
+    private static Processing.TranscriptChunkingOptions CreateOptions(
+        TimeSpan? maximumDuration = null)
     {
         return new Processing.TranscriptChunkingOptions
         {
             MinimumDuration = TimeSpan.FromMilliseconds(500),
-            MaximumDuration = TimeSpan.FromSeconds(1)
+            MaximumDuration = maximumDuration ?? TimeSpan.FromSeconds(1)
         };
     }
 
