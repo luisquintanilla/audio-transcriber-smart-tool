@@ -871,7 +871,7 @@ public sealed class FoundryLocalAdapterTests
                 RecreateExternally();
             }
 
-            return Task.FromResult(initializedManager);
+            return Task.FromResult<object?>(initializedManager);
         }
 
         public void RecreateExternally()
