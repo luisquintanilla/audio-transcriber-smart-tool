@@ -68,6 +68,25 @@ public sealed class ChaptersCapabilityTests
     }
 
     [Fact]
+    public async Task Chapters_cli_redacts_unwritable_output_path()
+    {
+        using var fixture = new TemporaryFixture();
+        var input = fixture.WriteTranscript(
+            CreateDocument(Segment("source", 0, 1, 0, "segment-source")));
+        var output = Path.Combine(fixture.Path("missing"), "chapters.json");
+        var error = new StringWriter();
+
+        var exitCode = await new CliApplication().RunAsync(
+            ["chapters", "--input", input, "--output", output],
+            new StringWriter(),
+            error);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("could not be written to 'chapters.json'", error.ToString());
+        Assert.DoesNotContain(output, error.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Chapters_cli_rejects_invalid_provider_as_usage_failure()
     {
         using var fixture = new TemporaryFixture();

@@ -284,13 +284,26 @@ public sealed class CliApplication
             var artifact = await documentGenerator
                 .GenerateAsync(document, generationOptions, cancellationToken)
                 .ConfigureAwait(false);
-            await new TranscriptChapterArtifactFileWriter()
-                .WriteAsync(
-                    options.OutputPath,
-                    artifact,
-                    options.Overwrite,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            try
+            {
+                await new TranscriptChapterArtifactFileWriter()
+                    .WriteAsync(
+                        options.OutputPath,
+                        artifact,
+                        options.Overwrite,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (
+                exception is IOException or
+                UnauthorizedAccessException or
+                DirectoryNotFoundException)
+            {
+                throw new IOException(
+                    "Chapter output could not be written to " +
+                    $"'{SafePathDisplay.Basename(options.OutputPath)}'.",
+                    exception);
+            }
 
             await output.WriteLineAsync(
                 $"Wrote {artifact.Count} chapter(s) to " +

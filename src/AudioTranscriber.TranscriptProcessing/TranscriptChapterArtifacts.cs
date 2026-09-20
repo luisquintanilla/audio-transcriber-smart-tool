@@ -386,12 +386,8 @@ public sealed class TranscriptChapterArtifactGenerator
                 "The chapter window was not found in its chunk result.");
         }
 
-        var gapBefore = index > 0 && windows[index - 1].IsGap
-            ? (TimeSpan?)(windows[index - 1].End - windows[index - 1].Start)
-            : null;
-        var gapAfter = index + 1 < windows.Count && windows[index + 1].IsGap
-            ? (TimeSpan?)(windows[index + 1].End - windows[index + 1].Start)
-            : null;
+        var gapBefore = GetAdjacentGapDuration(windows, index - 1, -1);
+        var gapAfter = GetAdjacentGapDuration(windows, index + 1, 1);
 
         return new TranscriptChapterBoundaryMetadata(
             firstSegment.Id,
@@ -400,6 +396,26 @@ public sealed class TranscriptChapterArtifactGenerator
             lastSegment.OriginalOrdinal,
             gapBefore,
             gapAfter);
+    }
+
+    private static TimeSpan? GetAdjacentGapDuration(
+        IReadOnlyList<TranscriptChunkWindow> windows,
+        int index,
+        int step)
+    {
+        if (index < 0 || index >= windows.Count || !windows[index].IsGap)
+        {
+            return null;
+        }
+
+        var duration = TimeSpan.Zero;
+        while (index >= 0 && index < windows.Count && windows[index].IsGap)
+        {
+            duration += windows[index].End - windows[index].Start;
+            index += step;
+        }
+
+        return duration;
     }
 
     private static void WriteMetadata(

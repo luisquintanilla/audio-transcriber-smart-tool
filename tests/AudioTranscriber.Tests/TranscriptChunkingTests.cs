@@ -478,6 +478,28 @@ public sealed class TranscriptChunkingTests
     }
 
     [Fact]
+    public void Build_RejectsRunThatWouldExceedPartitioningComplexity()
+    {
+        var segments = Enumerable.Range(0, 448)
+            .Select(
+                index => Segment(
+                    $"segment {index}",
+                    TimeSpan.FromTicks(index),
+                    TimeSpan.FromTicks(index + 1),
+                    ordinal: index))
+            .ToArray();
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => CreateBuilder().Build(
+                CreateDocument(segments),
+                CreateOptions(
+                    minimumDuration: TimeSpan.FromTicks(1),
+                    maximumDuration: TimeSpan.FromDays(1))));
+
+        Assert.Contains("maximum partitioning complexity", exception.Message);
+    }
+
+    [Fact]
     public void Build_GapAtChunkBoundary_ClipsGapToRequestedRange()
     {
         var first = Segment(

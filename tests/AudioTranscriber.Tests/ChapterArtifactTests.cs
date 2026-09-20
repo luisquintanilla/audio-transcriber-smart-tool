@@ -104,6 +104,22 @@ public sealed class ChapterArtifactTests
     }
 
     [Fact]
+    public void Generate_SplitGap_PreservesFullBoundaryGapDuration()
+    {
+        var chunkResult = CreateChunkBuilder().Build(
+            CreateDocument(
+                Segment("before", 0, 1, 0, id: "segment-before"),
+                Segment("after", 12, 13, 1, id: "segment-after")),
+            CreateOptions(maximumDuration: TimeSpan.FromSeconds(4)));
+
+        var chapters = new Processing.TranscriptChapterArtifactGenerator()
+            .Generate(chunkResult);
+
+        Assert.Equal(TimeSpan.FromSeconds(11), chapters[0].Boundary.GapAfter);
+        Assert.Equal(TimeSpan.FromSeconds(11), chapters[1].Boundary.GapBefore);
+    }
+
+    [Fact]
     public void Generate_PreservesChunkOrder()
     {
         var chunkResult = CreateChunkBuilder().Build(

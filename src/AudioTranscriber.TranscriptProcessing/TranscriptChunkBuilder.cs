@@ -17,6 +17,7 @@ namespace AudioTranscriber.TranscriptProcessing;
 public sealed class TranscriptChunkBuilder
 {
     private const long MaximumGapWindowCount = 10_000;
+    private const long MaximumPartitionCandidateCount = 100_000;
 
     private readonly IEmbeddingGenerator<TextContent, Embedding<float>>? embeddingGenerator;
     private readonly ITranscriptChunkScoringProvider? scoringProvider;
@@ -291,6 +292,7 @@ public sealed class TranscriptChunkBuilder
 
         var best = new Partition?[run.Count + 1];
         best[0] = new Partition(0, 0, -1, 0);
+        var candidateCount = 0L;
 
         for (var start = 0; start < run.Count; start++)
         {
@@ -306,6 +308,12 @@ public sealed class TranscriptChunkBuilder
                 if (end > start && candidateDuration > options.MaximumDuration)
                 {
                     break;
+                }
+
+                if (++candidateCount > MaximumPartitionCandidateCount)
+                {
+                    throw new InvalidOperationException(
+                        "Transcript segments exceed the maximum partitioning complexity.");
                 }
 
                 var candidate = new Partition(
