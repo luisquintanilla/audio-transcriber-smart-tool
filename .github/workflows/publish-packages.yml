@@ -1,0 +1,175 @@
+name: Publish packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer package version to publish without a leading v
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-nuget-${{ github.event_name == 'push' && github.ref_name || format('v{0}', inputs.version) }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Validate, pack, and publish
+    runs-on: ubuntu-latest
+    env:
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      NUGET_SOURCE: https://nuget.pkg.github.com/luisquintanilla/index.json
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up the pinned .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Validate release ref and resolve version
+        id: release-version
+        shell: bash
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          semver='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
+
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            [[ "$GITHUB_REF_TYPE" == "tag" ]] || {
+              echo "Release pushes must be tag refs." >&2
+              exit 1
+            }
+
+            tag="$GITHUB_REF_NAME"
+            [[ "$tag" =~ ^v${semver}$ ]] || {
+              echo "Tag '$tag' is not a supported semantic-version tag (expected vMAJOR.MINOR.PATCH[-prerelease][+build])." >&2
+              exit 1
+            }
+            version="${tag#v}"
+
+            if ! git show-ref --verify --quiet "refs/remotes/origin/$DEFAULT_BRANCH"; then
+              git fetch --no-tags origin "$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+            fi
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" "refs/remotes/origin/$DEFAULT_BRANCH"; then
+              echo "Tag '$tag' does not point to a commit reachable from '$DEFAULT_BRANCH'." >&2
+              exit 1
+            fi
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            [[ "$GITHUB_REF_NAME" == "$DEFAULT_BRANCH" ]] || {
+              echo "Manual publication is restricted to the '$DEFAULT_BRANCH' branch." >&2
+              exit 1
+            }
+
+            version="$DISPATCH_VERSION"
+            [[ "$version" =~ ^${semver}$ ]] || {
+              echo "Dispatch version '$version' is not a supported semantic version (use MAJOR.MINOR.PATCH[-prerelease][+build], without v)." >&2
+              exit 1
+            }
+          else
+            echo "Unsupported event '$GITHUB_EVENT_NAME'." >&2
+            exit 1
+          fi
+
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'PACKAGE_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+          echo "Resolved package version: $version"
+
+      - name: Restore Release assets
+        run: dotnet restore AudioTranscriber.sln --configfile NuGet.config --verbosity minimal
+
+      - name: Build Release assets
+        run: dotnet build AudioTranscriber.sln --configuration Release --no-restore --no-incremental --verbosity minimal
+
+      - name: Test Release assets
+        run: dotnet test AudioTranscriber.sln --configuration Release --no-restore --no-build --verbosity minimal
+
+      - name: Pack the four release packages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_dir="$GITHUB_WORKSPACE/artifacts/packages"
+          rm -rf "$package_dir"
+          mkdir -p "$package_dir"
+
+          package_ids=(
+            "AudioTranscriber"
+            "AudioTranscriber.FoundryLocal"
+            "AudioTranscriber.Granite"
+            "audio-transcriber"
+          )
+          projects=(
+            "src/AudioTranscriber/AudioTranscriber.csproj"
+            "src/AudioTranscriber.FoundryLocal/AudioTranscriber.FoundryLocal.csproj"
+            "src/AudioTranscriber.Granite/AudioTranscriber.Granite.csproj"
+            "src/audio-transcriber/audio-transcriber.csproj"
+          )
+          [[ "${#package_ids[@]}" -eq "${#projects[@]}" ]] || {
+            echo "Package ID and project lists must stay aligned." >&2
+            exit 1
+          }
+
+          for index in "${!projects[@]}"; do
+            dotnet pack "${projects[$index]}" \
+              --configuration Release \
+              --no-build \
+              --no-restore \
+              --output "$package_dir" \
+              -p:PackageVersion="$PACKAGE_VERSION" \
+              -p:Version="$PACKAGE_VERSION" \
+              --verbosity minimal
+          done
+
+          expected_packages=()
+          for package_id in "${package_ids[@]}"; do
+            expected_packages+=("$package_id.$PACKAGE_VERSION.nupkg")
+          done
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected_packages[@]}" | sort)
+          mapfile -t actual_files < <(find "$package_dir" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)
+
+          if [[ "${#actual_files[@]}" -ne "${#expected_sorted[@]}" ]]; then
+            printf 'Unexpected package file set:\n%s\n' "$(printf '%s\n' "${actual_files[@]}")" >&2
+            exit 1
+          fi
+          for index in "${!expected_sorted[@]}"; do
+            [[ "${actual_files[$index]}" == "${expected_sorted[$index]}" ]] || {
+              echo "Unexpected package '${actual_files[$index]}'." >&2
+              exit 1
+            }
+          done
+          if find "$package_dir" -mindepth 1 -maxdepth 1 -type d -print -quit | grep -q .; then
+            echo "Package output contains a nested directory." >&2
+            exit 1
+          fi
+
+          printf 'Packages ready to publish:\n%s\n' "$(printf '%s\n' "${actual_files[@]}")"
+
+      - name: Publish packages to GitHub Packages
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r package_path; do
+            echo "Publishing $(basename "$package_path")"
+            dotnet nuget push "$package_path" \
+              --source "$NUGET_SOURCE" \
+              --api-key "$GITHUB_TOKEN" \
+              --skip-duplicate \
+              --no-symbols
+          done < <(find "$GITHUB_WORKSPACE/artifacts/packages" -mindepth 1 -maxdepth 1 -type f -name '*.nupkg' | sort)
