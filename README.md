@@ -55,8 +55,13 @@ nuget.org or the shared Smart Tools Catalog:
 | --- | --- | --- |
 | `audio-transcriber` | `0.1.1` | CLI: `dotnet tool install` |
 | `AudioTranscriber` | `0.1.1` | Library: ordinary `PackageReference` |
+| `AudioTranscriber.FoundryLocal` | `0.1.1` | Optional Foundry Local chapter enrichment provider |
+| `AudioTranscriber.Granite` | `0.1.1` | Optional Granite embeddings provider |
 
-Both use `https://nuget.pkg.github.com/luisquintanilla/index.json`.
+The version column is the coordinated release version supplied by the
+publishing workflow; the optional provider project files retain their
+development default of `0.1.0` and are overridden centrally during release.
+All four packages use `https://nuget.pkg.github.com/luisquintanilla/index.json`.
 The hyphen distinguishes these IDs; NuGet package IDs are case-insensitive.
 The tool bundles the library for execution but is not a library dependency.
 
@@ -106,14 +111,54 @@ Use the `--` separator when forwarding `--help` to a local tool; otherwise the
 initial `audio-transcriber` `0.1.0` package omits this separator; `0.1.1`
 ships the corrected commands shown here.
 
-For maintainers, pack the appropriate project and publish only its new artifact
-to the feed above using securely configured local credentials with
-`write:packages`. Both existing 0.1.0 package releases are immutable:
-packing them for validation is not permission to republish them. A newly published
-GitHub package defaults to private; its owner must explicitly make each package
-public in **Package settings** and verify visibility. Linking the public
-repository does not make either package public. Publication is manual; no CI
-publishing workflow is provided.
+### Publishing a release
+
+The [`Publish packages`](.github/workflows/publish-packages.yml) workflow
+publishes exactly the four package IDs in the table above, and never publishes
+on ordinary pushes or pull requests. It restores, builds, and tests the
+solution in `Release` before packing. The optional real-model tests remain
+skipped unless their opt-in environment variables are set, so a release does
+not download model weights or media.
+
+Use an annotated or lightweight semantic-version tag on a commit already
+reachable from the default `main` branch:
+
+```powershell
+git switch main
+git pull --ff-only
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+The tag must match `vMAJOR.MINOR.PATCH`, optionally followed by a SemVer
+pre-release or build-metadata suffix. The workflow strips the leading `v` and
+passes the same validated version to every pack command. A controlled rerun
+or manual release can instead use **Actions > Publish packages > Run
+workflow**, select the `main` branch, and enter `MAJOR.MINOR.PATCH` (without
+`v`) in the required `version` input. A dispatch from another branch is
+rejected before restore or publication.
+
+GitHub Packages versions are immutable. Do not reuse a tag or dispatch version
+for different contents, and do not try to republish the existing `0.1.0`
+artifacts. The workflow uses `--skip-duplicate`, so rerunning the same
+validated version is safe after a partial failure: already-published package
+IDs are skipped and missing package IDs are retried. If package contents must
+change, create a new semantic version and tag instead. A concurrency guard
+also prevents two runs for the same version from publishing simultaneously.
+
+The workflow uses only the automatically provided `GITHUB_TOKEN` with
+`packages: write`; no repository secret is required. Packages are private by
+default, even when the source repository is public. The owner must explicitly
+change each package's visibility in **Package settings** and consumers still
+need an appropriately scoped token for authenticated installation. To run the
+workflow contract checks locally without adding a YAML dependency:
+
+```powershell
+pwsh -NoProfile -File .\scripts\validate-publish-workflow.ps1
+```
+
+The workflow publishes only to the owner's GitHub Packages NuGet endpoint
+above, never to nuget.org.
 
 ## Typed library consumption
 
@@ -141,7 +186,7 @@ published to nuget.org.
   <packageSourceMapping>
     <clear />
     <packageSource key="github">
-      <package pattern="AudioTranscriber" />
+      <package pattern="AudioTranscriber*" />
     </packageSource>
     <packageSource key="nuget.org">
       <package pattern="*" />
