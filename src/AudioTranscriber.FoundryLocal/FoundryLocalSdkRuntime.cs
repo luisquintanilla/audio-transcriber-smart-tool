@@ -127,15 +127,14 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
                     [],
                     exception.Message);
         }
-        catch (FoundryLocalException exception)
+        catch (FoundryLocalException)
         {
             return new FoundryLocalReadiness(
                 FoundryLocalDiagnosticCode.RuntimeUnavailable,
                 options.ModelAlias,
                 null,
                 [],
-                "Foundry Local reported that its runtime is unavailable: " +
-                exception.Message);
+                "Foundry Local reported that its runtime is unavailable.");
         }
         catch (InvalidOperationException)
         {
@@ -381,15 +380,19 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
             .ToArray();
     }
 
-    private static bool IsChatModel(IModel model) =>
+    internal static bool IsChatModel(IModel model) =>
         string.Equals(
             model.Info.Task,
             "chat-completion",
-            StringComparison.Ordinal) ||
+            StringComparison.OrdinalIgnoreCase) ||
         string.Equals(
             model.Info.Task,
             "vision-language-chat",
-            StringComparison.Ordinal);
+            StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(
+            model.Info.Task,
+            "multimodal",
+            StringComparison.OrdinalIgnoreCase);
 
     internal static IModel? FindModel(
         IEnumerable<IModel> models,
@@ -397,14 +400,15 @@ public sealed class FoundryLocalSdkRuntime : IFoundryLocalRuntime
         models
             .SelectMany(model => new[] { model }.Concat(model.Variants))
             .FirstOrDefault(
-                model => string.Equals(
-                             model.Alias,
-                             aliasOrId,
-                             StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(
-                             model.Id,
-                             aliasOrId,
-                             StringComparison.OrdinalIgnoreCase));
+                model =>
+                    string.Equals(
+                        model.Alias,
+                        aliasOrId,
+                        StringComparison.Ordinal) ||
+                    string.Equals(
+                        model.Id,
+                        aliasOrId,
+                        StringComparison.Ordinal));
 
     internal static async Task<(bool IsCached, bool IsLoaded)> GetModelStateAsync(
         IModel model,

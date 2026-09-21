@@ -21,11 +21,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AudioTranscriber\AudioTranscriber.csproj" />
+    <ProjectReference Include="..\AudioTranscriber.FoundryLocal\AudioTranscriber.FoundryLocal.csproj" />
     <ProjectReference Include="..\AudioTranscriber.Granite\AudioTranscriber.Granite.csproj" />
     <ProjectReference Include="..\AudioTranscriber.TranscriptProcessing\AudioTranscriber.TranscriptProcessing.csproj" />
     <None Include="..\..\README.md" Pack="true" PackagePath="README.md" />
     <None Include="..\AudioTranscriber\SMART_TOOL.md" Pack="true" PackagePath="src\AudioTranscriber\SMART_TOOL.md" />
     <None Include="..\..\smart-tool.json" Pack="true" PackagePath="smart-tool.json" />
+    <None Include="..\..\schemas\audio-transcriber-chapters-1.1.schema.json" Pack="true" PackagePath="schemas\audio-transcriber-chapters-1.1.schema.json" />
+    <None Include="..\..\schemas\audio-transcriber-chapters-1.1.example.json" Pack="true" PackagePath="schemas\audio-transcriber-chapters-1.1.example.json" />
   </ItemGroup>
 
 </Project>

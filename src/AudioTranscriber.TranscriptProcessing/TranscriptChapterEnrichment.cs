@@ -10,8 +10,17 @@ public sealed class TranscriptChapterEnrichmentException : InvalidOperationExcep
         string chapterId,
         string code,
         Exception? innerException = null)
+        : this(chapterId, code, message: null, innerException)
+    {
+    }
+
+    public TranscriptChapterEnrichmentException(
+        string chapterId,
+        string code,
+        string? message,
+        Exception? innerException)
         : base(
-            $"Chapter enrichment failed for '{chapterId}' ({code}).",
+            message ?? $"Chapter enrichment failed for '{chapterId}' ({code}).",
             innerException)
     {
         ChapterId = chapterId;
@@ -75,20 +84,25 @@ public sealed class TranscriptChapterEnrichmentOrchestrator
             }
             catch (Exception exception)
             {
+                var providerFailure = exception as ITranscriptProviderFailure;
+                var failureCode = providerFailure?.Code ?? "provider_failure";
+                var failureMessage = providerFailure?.SanitizedMessage ??
+                    "The chapter enrichment provider failed.";
                 if (generation.FailurePolicy ==
                     TranscriptChapterEnrichmentFailurePolicy.FailFast)
                 {
                     throw new TranscriptChapterEnrichmentException(
                         chapter.Id,
-                        "provider_failure",
+                        failureCode,
+                        failureMessage,
                         exception);
                 }
 
                 output.Add(
                     CreateFailure(
                         chapter,
-                        "provider_failure",
-                        "The chapter enrichment provider failed."));
+                        failureCode,
+                        failureMessage));
                 continue;
             }
 
@@ -204,18 +218,24 @@ public sealed class TranscriptChapterEnrichmentOrchestrator
                 }
                 catch (Exception exception)
                 {
+                    var providerFailure = exception as ITranscriptProviderFailure;
+                    var failureCode = providerFailure?.Code ??
+                        "overall_summary_provider_failure";
+                    var failureMessage = providerFailure?.SanitizedMessage ??
+                        "The overall summary assembler failed.";
                     if (generation.FailurePolicy ==
                         TranscriptChapterEnrichmentFailurePolicy.FailFast)
                     {
                         throw new TranscriptChapterEnrichmentException(
                             "overall",
-                            "overall_summary_provider_failure",
+                            failureCode,
+                            failureMessage,
                             exception);
                     }
 
                     overallSummaryFailure = new TranscriptChapterEnrichmentFailure(
-                        "overall_summary_provider_failure",
-                        "The overall summary assembler failed.");
+                        failureCode,
+                        failureMessage);
                 }
             }
         }

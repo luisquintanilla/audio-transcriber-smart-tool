@@ -21,6 +21,17 @@ public enum TranscriptChapterEnrichmentStatus
 }
 
 /// <summary>
+/// Supplies a stable, sanitized provider failure for transcript-processing
+/// contracts without coupling the core library to a provider implementation.
+/// </summary>
+public interface ITranscriptProviderFailure
+{
+    string Code { get; }
+
+    string SanitizedMessage { get; }
+}
+
+/// <summary>
 /// Configures an explicitly injected chapter enrichment provider.
 /// </summary>
 public sealed record TranscriptChapterEnrichmentOptions

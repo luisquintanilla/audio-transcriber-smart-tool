@@ -78,10 +78,97 @@ public sealed class ChapterArtifactTests
         var artifacts = new Processing.TranscriptChapterArtifactGenerator()
             .Generate(chunkResult);
 
-        Assert.Equal("1.0", artifacts.SchemaVersion);
-        Assert.Equal("1.0", Assert.Single(artifacts).SchemaVersion);
-        Assert.Contains("\"schemaVersion\": \"1.0\"", new Processing.TranscriptChapterArtifactGenerator()
+        Assert.Equal("1.1", artifacts.SchemaVersion);
+        Assert.Equal("1.1", Assert.Single(artifacts).SchemaVersion);
+        Assert.Contains("\"schemaVersion\": \"1.1\"", new Processing.TranscriptChapterArtifactGenerator()
             .Serialize(artifacts), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Reader_round_trips_a_self_contained_artifact()
+    {
+        var original = new Processing.TranscriptChapterArtifactGenerator()
+            .Generate(
+                CreateChunkBuilder().Build(
+                    CreateDocument(
+                        Segment(
+                            "standalone input",
+                            0,
+                            1,
+                            0,
+                            id: "segment-standalone",
+                            sourceId: "source-standalone",
+                            metadata: new Dictionary<string, string>
+                            {
+                                ["speaker"] = "host"
+                            })),
+                    CreateOptions()));
+        var json = new Processing.TranscriptChapterArtifactGenerator()
+            .Serialize(original);
+
+        var roundTripped = await new Processing.TranscriptChapterArtifactReader()
+            .ReadDocumentAsync(
+                new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json)));
+
+        var chapter = Assert.Single(roundTripped);
+        Assert.Equal(original.SchemaVersion, roundTripped.SchemaVersion);
+        Assert.Equal("segment-standalone", Assert.Single(chapter.SourceSegmentIds));
+        Assert.Equal("source-standalone", Assert.Single(chapter.SourceIds));
+        Assert.Equal("standalone input", Assert.Single(chapter.SourceSegments).Text);
+        Assert.Equal("host", chapter.SourceSegments[0].SourceMetadata["speaker"]);
+    }
+
+    [Fact]
+    public async Task Reader_round_trips_total_hour_timestamps_and_empty_metadata_values()
+    {
+        var original = new Processing.TranscriptChapterArtifactGenerator()
+            .Generate(
+                CreateChunkBuilder().Build(
+                    CreateDocument(
+                        Segment(
+                            "long recording",
+                            24 * 60 * 60,
+                            25 * 60 * 60,
+                            0,
+                            id: "segment-long",
+                            metadata: new Dictionary<string, string>
+                            {
+                                ["empty"] = string.Empty,
+                                ["whitespace"] = "  preserved  "
+                            })),
+                    CreateOptions()));
+        var json = new Processing.TranscriptChapterArtifactGenerator()
+            .Serialize(original);
+
+        var roundTripped = await new Processing.TranscriptChapterArtifactReader()
+            .ReadDocumentAsync(
+                new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json)));
+
+        var metadata = Assert.Single(roundTripped).SourceSegments[0].SourceMetadata;
+        Assert.Equal(string.Empty, metadata["empty"]);
+        Assert.Equal("  preserved  ", metadata["whitespace"]);
+    }
+
+    [Fact]
+    public async Task Reader_rejects_schema_1_0_with_regeneration_guidance()
+    {
+        var artifact = new Processing.TranscriptChapterArtifactGenerator()
+            .Generate(
+                CreateChunkBuilder().Build(
+                    CreateDocument(
+                        Segment("legacy", 0, 1, 0, id: "segment-legacy")),
+                    CreateOptions()));
+        var json = new Processing.TranscriptChapterArtifactGenerator()
+            .Serialize(artifact)
+            .Replace("\"schemaVersion\": \"1.1\"", "\"schemaVersion\": \"1.0\"");
+
+        var exception = await Assert.ThrowsAsync<Processing.TranscriptFormatException>(
+            () => new Processing.TranscriptChapterArtifactReader()
+                .ReadDocumentAsync(
+                    new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json))));
+
+        Assert.Equal("unsupported_schema_version", exception.Code);
+        Assert.Contains("regenerate", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

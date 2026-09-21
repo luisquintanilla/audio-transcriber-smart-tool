@@ -47,6 +47,8 @@ public sealed class FoundryLocalEnrichmentProvider
             {
                 ["responseSchemaVersion"] =
                     FoundryLocalPromptBuilder.ResponseSchemaVersion,
+                ["model"] = FoundryLocalModelContract.RequiredModelAlias,
+                ["resolvedModel"] = FoundryLocalModelContract.RequiredModelAlias,
                 ["modelDownloadPolicy"] = options.AllowModelDownload
                     ? "explicit-opt-in"
                     : "disabled",
@@ -58,6 +60,12 @@ public sealed class FoundryLocalEnrichmentProvider
                     CultureInfo.InvariantCulture),
                 ["temperature"] = options.Temperature.ToString(
                     "R",
+                    CultureInfo.InvariantCulture),
+                ["seed"] = options.Seed.ToString(CultureInfo.InvariantCulture),
+                ["doSample"] = options.DoSample
+                    ? "true"
+                    : "false",
+                ["maxResponseAttempts"] = options.MaxResponseAttempts.ToString(
                     CultureInfo.InvariantCulture)
             },
             FailurePolicy = failurePolicy,
@@ -73,14 +81,26 @@ public sealed class FoundryLocalEnrichmentProvider
         await using var operation = await AcquireOperationAsync(cancellationToken)
             .ConfigureAwait(false);
         var runtimeSession = operation.Session;
-        var response = await GetResponseAsync(
-                runtimeSession,
-                FoundryLocalPromptBuilder.BuildChapterPrompt(request.Chapter),
-                cancellationToken)
-            .ConfigureAwait(false);
-        return FoundryLocalResponseParser.ParseChapterSummary(
-            response.Text,
-            request.Chapter);
+        var messages = FoundryLocalPromptBuilder.BuildChapterPrompt(request.Chapter);
+        for (var attempt = 1; ; attempt++)
+        {
+            var response = await GetResponseAsync(
+                    runtimeSession,
+                    messages,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            try
+            {
+                return FoundryLocalResponseParser.ParseChapterSummary(
+                    response.Text,
+                    request.Chapter);
+            }
+            catch (FoundryLocalResponseException) when (
+                attempt < options.MaxResponseAttempts)
+            {
+                messages = FoundryLocalPromptBuilder.AddCorrection(messages, "chapter");
+            }
+        }
     }
 
     public async ValueTask<TranscriptOverallSummary?> AssembleAsync(
@@ -91,14 +111,26 @@ public sealed class FoundryLocalEnrichmentProvider
         await using var operation = await AcquireOperationAsync(cancellationToken)
             .ConfigureAwait(false);
         var runtimeSession = operation.Session;
-        var response = await GetResponseAsync(
-                runtimeSession,
-                FoundryLocalPromptBuilder.BuildOverallPrompt(request),
-                cancellationToken)
-            .ConfigureAwait(false);
-        return FoundryLocalResponseParser.ParseOverallSummary(
-            response.Text,
-            request);
+        var messages = FoundryLocalPromptBuilder.BuildOverallPrompt(request);
+        for (var attempt = 1; ; attempt++)
+        {
+            var response = await GetResponseAsync(
+                    runtimeSession,
+                    messages,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            try
+            {
+                return FoundryLocalResponseParser.ParseOverallSummary(
+                    response.Text,
+                    request);
+            }
+            catch (FoundryLocalResponseException) when (
+                attempt < options.MaxResponseAttempts)
+            {
+                messages = FoundryLocalPromptBuilder.AddCorrection(messages, "overall");
+            }
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -298,7 +330,11 @@ public sealed class FoundryLocalEnrichmentProvider
             ModelId = modelId,
             Temperature = (float)options.Temperature,
             MaxOutputTokens = options.MaxOutputTokens,
-            ResponseFormat = ChatResponseFormat.Json
+            AdditionalProperties = new()
+            {
+                ["seed"] = options.Seed,
+                ["doSample"] = options.DoSample
+            }
         };
 
     private void ReleaseOperation()

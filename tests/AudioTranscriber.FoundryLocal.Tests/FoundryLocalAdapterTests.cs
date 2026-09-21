@@ -30,9 +30,11 @@ public sealed class FoundryLocalAdapterTests
 
         Assert.Equal(ChatRole.System, chapterPrompt[0].Role);
         Assert.Equal(ChatRole.User, chapterPrompt[1].Role);
-        Assert.Contains(chapter.Id, chapterPrompt[1].Text);
-        Assert.Contains("segment-first", chapterPrompt[1].Text);
-        Assert.Contains("source-first", chapterPrompt[1].Text);
+        Assert.Contains("chapterRef: c1", chapterPrompt[1].Text);
+        Assert.Contains("segmentRef=s1", chapterPrompt[1].Text);
+        Assert.DoesNotContain(chapter.Id, chapterPrompt[1].Text);
+        Assert.DoesNotContain("segment-first", chapterPrompt[1].Text);
+        Assert.DoesNotContain("source-first", chapterPrompt[1].Text);
         Assert.Contains("00:00:01", chapterPrompt[1].Text);
 
         var overallRequest = new TranscriptOverallSummaryRequest(
@@ -49,7 +51,8 @@ public sealed class FoundryLocalAdapterTests
             isPartial: false);
         var overallPrompt = FoundryLocalPromptBuilder.BuildOverallPrompt(overallRequest);
 
-        Assert.Contains("chapter-one", overallPrompt[1].Text);
+        Assert.Contains("chapterRef=c1", overallPrompt[1].Text);
+        Assert.DoesNotContain("chapter-one", overallPrompt[1].Text);
         Assert.Contains("first summary", overallPrompt[1].Text);
         Assert.DoesNotContain("first source", overallPrompt[1].Text);
         Assert.DoesNotContain("second source", overallPrompt[1].Text);
@@ -64,7 +67,7 @@ public sealed class FoundryLocalAdapterTests
         var prompt = FoundryLocalPromptBuilder.BuildChapterPrompt(
             Assert.Single(artifact));
 
-        Assert.Contains("sourceId=null;", prompt[1].Text);
+        Assert.Contains("segmentRef=s1", prompt[1].Text);
         Assert.DoesNotContain("<null>", prompt[1].Text, StringComparison.Ordinal);
     }
 
@@ -83,9 +86,9 @@ public sealed class FoundryLocalAdapterTests
         var response = JsonSerializer.Serialize(
             new
             {
-                schemaVersion = "1.0",
+                schemaVersion = "2.0",
                 kind = "chapter",
-                chapterId = chapter.Id,
+                chapterRef = "c1",
                 summary = "A source-linked summary.",
                 title = "A title",
                 keywords = new[] { "zeta", "alpha" },
@@ -93,10 +96,7 @@ public sealed class FoundryLocalAdapterTests
                 {
                     new
                     {
-                        sourceSegmentId = "segment-source",
-                        sourceId = "source-id",
-                        start = "00:00:00.0000000",
-                        end = "00:00:01.0000000"
+                        segmentRef = "s1"
                     }
                 }
             });
@@ -114,12 +114,100 @@ public sealed class FoundryLocalAdapterTests
         Assert.Equal(TimeSpan.FromSeconds(1), evidence.End);
 
         var invalid = response.Replace(
-            "\"sourceSegmentId\":\"segment-source\"",
-            "\"sourceSegmentId\":\"not-a-source\"",
+            "\"segmentRef\":\"s1\"",
+            "\"segmentRef\":\"not-a-source\"",
             StringComparison.Ordinal);
         var exception = Assert.Throws<FoundryLocalResponseException>(
             () => FoundryLocalResponseParser.ParseChapterSummary(invalid, chapter));
-        Assert.Equal("unknown_evidence_segment", exception.Code);
+        Assert.Equal("unknown_evidence_segment_ref", exception.Code);
+    }
+
+    [Fact]
+    public async Task Provider_retries_once_for_a_response_contract_failure()
+    {
+        var artifact = CreateArtifact(
+            Segment("retryable", 0, 1, 0, "segment-retryable"));
+        var attempts = 0;
+        var chat = new FakeChatClient(
+            (_, _, _) =>
+            {
+                attempts++;
+                return Task.FromResult(
+                    ChatResponseFor(
+                        attempts == 1
+                            ? "{not-json"
+                            : ChapterResponse(Assert.Single(artifact), "recovered")));
+            });
+        var provider = new FoundryLocalEnrichmentProvider(
+            new FoundryLocalEnrichmentOptions(
+                FoundryLocalModelContract.RequiredModelAlias)
+            {
+                MaxResponseAttempts = 2
+            },
+            new FakeRuntime(chat));
+
+        var result = await provider.EnrichAsync(
+            new TranscriptChapterEnrichmentRequest(Assert.Single(artifact)));
+
+        Assert.Equal("recovered", result!.Summary);
+        Assert.Equal(2, chat.Requests.Count);
+        Assert.Contains("Correct the previous response.", chat.Requests[1][2].Text);
+        await provider.DisposeAsync();
+    }
+
+    [Fact]
+    public void Parser_rejects_prose_and_incomplete_code_fences()
+    {
+        var artifact = CreateArtifact(
+            Segment("parser input", 0, 1, 0, "segment-parser"));
+        var prose = Assert.Throws<FoundryLocalResponseException>(
+            () => FoundryLocalResponseParser.ParseChapterSummary(
+                "Here is the answer: {}",
+                Assert.Single(artifact)));
+        Assert.Equal("invalid_json", prose.Code);
+
+        var fence = Assert.Throws<FoundryLocalResponseException>(
+            () => FoundryLocalResponseParser.ExtractJsonEnvelope(
+                "```json\n{}\n"));
+        Assert.Equal("invalid_response_envelope", fence.Code);
+    }
+
+    [Fact]
+    public void Parser_treats_empty_output_as_a_response_contract_failure()
+    {
+        var artifact = CreateArtifact(
+            Segment("parser input", 0, 1, 0, "segment-parser"));
+
+        var exception = Assert.Throws<FoundryLocalResponseException>(
+            () => FoundryLocalResponseParser.ParseChapterSummary(
+                " ",
+                Assert.Single(artifact)));
+
+        Assert.Equal("invalid_response_envelope", exception.Code);
+    }
+
+    [Fact]
+    public void Parser_allows_code_fence_text_inside_a_raw_json_string()
+    {
+        var artifact = CreateArtifact(
+            Segment("parser input", 0, 1, 0, "segment-parser"));
+        var response = JsonSerializer.Serialize(
+            new
+            {
+                schemaVersion = "2.0",
+                kind = "chapter",
+                chapterRef = "c1",
+                summary = "The markdown ```json fence is discussed here.",
+                title = (string?)null,
+                keywords = new[] { "topic" },
+                evidence = Array.Empty<object>()
+            });
+
+        var parsed = FoundryLocalResponseParser.ParseChapterSummary(
+            response,
+            Assert.Single(artifact));
+
+        Assert.Contains("```json", parsed.Summary, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -136,7 +224,7 @@ public sealed class FoundryLocalAdapterTests
             });
         var runtime = new FakeRuntime(chat);
         var provider = new FoundryLocalEnrichmentProvider(
-            new FoundryLocalEnrichmentOptions("chosen-model")
+            new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias)
             {
                 RequestTimeout = TimeSpan.FromSeconds(9),
                 MaxOutputTokens = 321,
@@ -157,8 +245,10 @@ public sealed class FoundryLocalAdapterTests
         Assert.Equal("model-id", chatOptions.ModelId);
         Assert.Equal(321, chatOptions.MaxOutputTokens);
         Assert.Equal(0.25f, chatOptions.Temperature);
+        Assert.Equal(0, chatOptions.AdditionalProperties!["seed"]);
+        Assert.False((bool)chatOptions.AdditionalProperties["doSample"]!);
         Assert.Equal("foundry-local", options.Provider);
-        Assert.Equal("chosen-model", options.Model);
+        Assert.Equal(FoundryLocalModelContract.RequiredModelAlias, options.Model);
         Assert.Equal(
             "disabled",
             options.ProviderConfiguration!["modelDownloadPolicy"]);
@@ -180,7 +270,7 @@ public sealed class FoundryLocalAdapterTests
             (request, _, _) =>
             {
                 if (request[1].Text.Contains(
-                        $"chapterId: {artifact[1].Id}",
+                        "text=second",
                         StringComparison.Ordinal))
                 {
                     throw new InvalidOperationException("simulated provider failure");
@@ -199,7 +289,7 @@ public sealed class FoundryLocalAdapterTests
 
                 var chapter = artifact.Single(
                     candidate => request[1].Text.Contains(
-                        $"chapterId: {candidate.Id}",
+                        $"text={candidate.SourceSegments[0].Text}",
                         StringComparison.Ordinal));
                 return Task.FromResult(
                     ChatResponseFor(
@@ -208,7 +298,7 @@ public sealed class FoundryLocalAdapterTests
                             $"summary-{chapter.Id}")));
             });
         var provider = new FoundryLocalEnrichmentProvider(
-            new FoundryLocalEnrichmentOptions("chosen-model"),
+            new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias),
             new FakeRuntime(chat));
 
         var document = await new TranscriptChapterEnrichmentOrchestrator(
@@ -246,7 +336,7 @@ public sealed class FoundryLocalAdapterTests
             (request, _, _) =>
             {
                 if (request[1].Text.Contains(
-                        $"chapterId: {artifact[1].Id}",
+                        "text=second",
                         StringComparison.Ordinal))
                 {
                     throw new InvalidOperationException("simulated provider failure");
@@ -254,13 +344,13 @@ public sealed class FoundryLocalAdapterTests
 
                 var chapter = artifact.Single(
                     candidate => request[1].Text.Contains(
-                        $"chapterId: {candidate.Id}",
+                        $"text={candidate.SourceSegments[0].Text}",
                         StringComparison.Ordinal));
                 return Task.FromResult(
                     ChatResponseFor(ChapterResponse(chapter, "first summary")));
             });
         var provider = new FoundryLocalEnrichmentProvider(
-            new FoundryLocalEnrichmentOptions("chosen-model"),
+            new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias),
             new FakeRuntime(chat));
 
         var exception = await Assert.ThrowsAsync<TranscriptChapterEnrichmentException>(
@@ -289,7 +379,7 @@ public sealed class FoundryLocalAdapterTests
                 return ChatResponseFor(string.Empty);
             });
         var provider = new FoundryLocalEnrichmentProvider(
-            new FoundryLocalEnrichmentOptions("chosen-model"),
+            new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias),
             new FakeRuntime(chat));
         using var cancellation = new CancellationTokenSource();
 
@@ -316,7 +406,7 @@ public sealed class FoundryLocalAdapterTests
                 ChatResponseFor(ChapterResponse(artifact[0], "retried"))));
         var runtime = new RetryingRuntime(chat);
         var provider = new FoundryLocalEnrichmentProvider(
-            new FoundryLocalEnrichmentOptions("chosen-model"),
+            new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias),
             runtime);
         using var cancellation = new CancellationTokenSource();
 
@@ -356,7 +446,7 @@ public sealed class FoundryLocalAdapterTests
                 return release.Task;
             });
         var provider = new FoundryLocalEnrichmentProvider(
-            new FoundryLocalEnrichmentOptions("chosen-model"),
+            new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias),
             new FakeRuntime(chat));
 
         var enrichment = provider.EnrichAsync(
@@ -392,7 +482,7 @@ public sealed class FoundryLocalAdapterTests
             Segment("initializing", 0, 1, 0, "segment-initializing"));
         var runtime = new CancellingInitializationRuntime();
         var provider = new FoundryLocalEnrichmentProvider(
-            new FoundryLocalEnrichmentOptions("chosen-model"),
+            new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias),
             runtime);
         using var cancellation = new CancellationTokenSource();
 
@@ -418,16 +508,16 @@ public sealed class FoundryLocalAdapterTests
             $"audio-transcriber-foundry-{Guid.NewGuid():N}");
 
         Assert.Throws<ArgumentException>(
-            () => new FoundryLocalEnrichmentOptions("model")
+            () => new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias)
             {
                 ModelCacheDirectory = packageRoot
             }.Validate());
         Assert.Throws<ArgumentException>(
-            () => new FoundryLocalEnrichmentOptions("model")
+            () => new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias)
             {
                 ModelCacheDirectory = descendant
             }.Validate());
-        new FoundryLocalEnrichmentOptions("model")
+        new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias)
         {
             ModelCacheDirectory = unrelated
         }.Validate();
@@ -568,7 +658,7 @@ public sealed class FoundryLocalAdapterTests
     {
         var host = new FakeManagerHost();
         var registry = new FoundryLocalManagerConfigurationRegistry(host);
-        var options = new FoundryLocalEnrichmentOptions("model")
+        var options = new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias)
         {
             ApplicationName = "app",
             ModelCacheDirectory = Path.Combine(
@@ -601,7 +691,7 @@ public sealed class FoundryLocalAdapterTests
 
         var exception = await Assert.ThrowsAsync<FoundryLocalProviderException>(
             () => registry.EnsureCompatibleAsync(
-                new FoundryLocalEnrichmentOptions("model"),
+                new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias),
                 CancellationToken.None));
 
         Assert.Equal(
@@ -614,7 +704,7 @@ public sealed class FoundryLocalAdapterTests
     {
         var host = new FakeManagerHost();
         var registry = new FoundryLocalManagerConfigurationRegistry(host);
-        var options = new FoundryLocalEnrichmentOptions("model");
+        var options = new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias);
         await registry.EnsureCompatibleAsync(options, CancellationToken.None);
         host.RecreateExternally();
 
@@ -634,7 +724,7 @@ public sealed class FoundryLocalAdapterTests
 
         var exception = await Assert.ThrowsAsync<FoundryLocalProviderException>(
             () => registry.EnsureCompatibleAsync(
-                new FoundryLocalEnrichmentOptions("model"),
+                new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias),
                 CancellationToken.None));
 
         Assert.Equal(
@@ -652,7 +742,7 @@ public sealed class FoundryLocalAdapterTests
     }
 
     [Fact]
-    public void Model_selection_accepts_a_catalog_variant_id()
+    public void Model_selection_accepts_exact_catalog_ids_for_variants()
     {
         var variant = new FakeCatalogModel("variant-id", "model-variant");
         var model = new FakeCatalogModel(
@@ -665,6 +755,17 @@ public sealed class FoundryLocalAdapterTests
             "variant-id");
 
         Assert.Same(variant, selected);
+    }
+
+    [Fact]
+    public void Multimodal_models_are_chat_capable()
+    {
+        var model = new FakeCatalogModel(
+            "multimodal-id",
+            "multimodal",
+            task: "Multimodal");
+
+        Assert.True(FoundryLocalSdkRuntime.IsChatModel(model));
     }
 
     [Fact]
@@ -737,7 +838,7 @@ public sealed class FoundryLocalAdapterTests
                 "missing-model",
                 "The requested model is not cached."));
         var provider = new FoundryLocalEnrichmentProvider(
-            new FoundryLocalEnrichmentOptions("missing-model"),
+            new FoundryLocalEnrichmentOptions(FoundryLocalModelContract.RequiredModelAlias),
             runtime);
 
         var exception = await Assert.ThrowsAsync<FoundryLocalProviderException>(
@@ -758,19 +859,16 @@ public sealed class FoundryLocalAdapterTests
         return JsonSerializer.Serialize(
             new
             {
-                schemaVersion = "1.0",
+                schemaVersion = "2.0",
                 kind = "chapter",
-                chapterId = chapter.Id,
+                chapterRef = "c1",
                 summary,
                 title = (string?)null,
                 keywords = new[] { "topic" },
                 evidence = chapter.SourceSegments.Select(
-                    segment => new
+                    (_, index) => new
                     {
-                        sourceSegmentId = segment.Id,
-                        sourceId = segment.SourceId,
-                        start = segment.Start.ToString("c"),
-                        end = segment.End.ToString("c")
+                        segmentRef = $"s{index + 1}"
                     })
             });
     }
@@ -782,10 +880,12 @@ public sealed class FoundryLocalAdapterTests
         return JsonSerializer.Serialize(
             new
             {
-                schemaVersion = "1.0",
+                schemaVersion = "2.0",
                 kind = "overall",
                 summary,
-                chapterIds
+                chapterRefs = chapterIds
+                    .Select((_, index) => $"c{index + 1}")
+                    .ToArray()
             });
     }
 
@@ -1021,20 +1121,30 @@ public sealed class FoundryLocalAdapterTests
             string alias,
             IReadOnlyList<Microsoft.AI.Foundry.Local.IModel>? variants = null,
             bool isCached = false,
-            bool isLoaded = false)
+            bool isLoaded = false,
+            string task = "chat-completion")
         {
             Id = id;
             Alias = alias;
             Variants = variants ?? [];
             IsCached = isCached;
             IsLoaded = isLoaded;
+            Info = new Microsoft.AI.Foundry.Local.ModelInfo
+            {
+                Id = id,
+                Name = alias,
+                Alias = alias,
+                ProviderType = "test",
+                Uri = "https://example.invalid/model",
+                ModelType = "test",
+                Task = task
+            };
         }
         public string Id { get; }
 
         public string Alias { get; }
 
-        public Microsoft.AI.Foundry.Local.ModelInfo Info =>
-            throw new NotSupportedException();
+        public Microsoft.AI.Foundry.Local.ModelInfo Info { get; }
 
         public IReadOnlyList<Microsoft.AI.Foundry.Local.IModel> Variants { get; }
 

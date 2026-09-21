@@ -9,7 +9,7 @@ public sealed class SmartToolServicesTests
     public void Capability_registry_exposes_all_current_commands_with_classification()
     {
         Assert.Equal(
-            ["manifest", "doctor", "convert", "transcribe", "chapters"],
+            ["manifest", "doctor", "convert", "transcribe", "chapters", "enrich"],
             SmartToolCapabilityRegistry.All.Select(capability => capability.Name));
         Assert.Equal(
             [
@@ -17,7 +17,8 @@ public sealed class SmartToolServicesTests
                 SmartToolCapabilityKind.Deterministic,
                 SmartToolCapabilityKind.Deterministic,
                 SmartToolCapabilityKind.ModelBacked,
-                SmartToolCapabilityKind.Deterministic
+                SmartToolCapabilityKind.Deterministic,
+                SmartToolCapabilityKind.ModelBacked
             ],
             SmartToolCapabilityRegistry.All.Select(capability => capability.Kind));
     }
@@ -301,6 +302,7 @@ public sealed class SmartToolServicesTests
                     "  - Produce timestamped transcripts from local speech recordings",
                     "  - Render transcripts for people or downstream programs",
                     "  - Produce source-linked timestamped chapters from transcript JSON",
+                    "  - Enrich any self-contained Audio Transcriber Chapter Artifact with Foundry Local",
                     "  - Check local model, cache, FFmpeg, and package readiness",
                     "platforms:",
                     "  - windows",
@@ -316,7 +318,11 @@ public sealed class SmartToolServicesTests
                     "  - name: Granite model assets",
                     "    purpose: Needed only when chapters explicitly selects the optional granite provider; the pinned assets must be provisioned in an external cache.",
                     "    optional: true",
-                    "    install: https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual"
+                    "    install: https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual",
+                    "  - name: Foundry Local model assets",
+                    "    purpose: Needed only by the explicit enrich capability; the exact Qwen model must be available in an external Foundry Local cache.",
+                    "    optional: true",
+                    "    install: https://learn.microsoft.com/windows/ai/apis/foundry-local"
                 ]),
             string.Join('\n', lines[..closingMarker]));
     }
@@ -339,6 +345,7 @@ public sealed class SmartToolServicesTests
                 "Produce timestamped transcripts from local speech recordings",
                 "Render transcripts for people or downstream programs",
                 "Produce source-linked timestamped chapters from transcript JSON",
+                "Enrich any self-contained Audio Transcriber Chapter Artifact with Foundry Local",
                 "Check local model, cache, FFmpeg, and package readiness"
             ],
             manifest.UseCases);
@@ -359,6 +366,11 @@ public sealed class SmartToolServicesTests
                     "Granite model assets",
                     "Needed only when chapters explicitly selects the optional granite provider; the pinned assets must be provisioned in an external cache.",
                     "https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual",
+                    true),
+                new SmartToolRequirement(
+                    "Foundry Local model assets",
+                    "Needed only by the explicit enrich capability; the exact Qwen model must be available in an external Foundry Local cache.",
+                    "https://learn.microsoft.com/windows/ai/apis/foundry-local",
                     true)
             ],
             manifest.Requires);

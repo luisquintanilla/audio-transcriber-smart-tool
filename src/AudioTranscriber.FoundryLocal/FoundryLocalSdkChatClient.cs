@@ -134,12 +134,47 @@ public sealed class FoundryLocalSdkChatClient : IChatClient
     internal static RequestOptions CreateRequestOptions(ChatOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        if (options.ResponseFormat is not null)
+        {
+            throw new NotSupportedException(
+                "Foundry Local ChatSession does not support Microsoft.Extensions.AI " +
+                "response-format options; the strict response contract is validated " +
+                "by Audio Transcriber.");
+        }
+
+        int? seedValue = null;
+        if (options.AdditionalProperties?.TryGetValue("seed", out var seed) == true)
+        {
+            seedValue = seed switch
+            {
+                int value => value,
+                long value when value is >= int.MinValue and <= int.MaxValue => (int)value,
+                _ => throw new ArgumentException(
+                    "Foundry Local seed must be an integer.",
+                    nameof(options))
+            };
+        }
+
+        bool? doSampleValue = null;
+        if (options.AdditionalProperties?.TryGetValue("doSample", out var doSample) == true)
+        {
+            doSampleValue = doSample switch
+            {
+                bool value => value,
+                _ => throw new ArgumentException(
+                    "Foundry Local doSample must be a boolean.",
+                    nameof(options))
+            };
+        }
+
         return new RequestOptions
         {
             Search = new SearchOptions
             {
-                Temperature = options.Temperature ?? 0,
-                MaxOutputTokens = options.MaxOutputTokens ?? 1200
+                Temperature = options.Temperature,
+                MaxOutputTokens = options.MaxOutputTokens,
+                Seed = seedValue,
+                DoSample = doSampleValue
             }
         };
     }

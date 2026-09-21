@@ -279,6 +279,57 @@ public static class SmartToolCapabilityRegistry
             an existing artifact implicitly and never falls back from Granite to a
             different provider.
             """
+        ),
+        new(
+            "enrich",
+            SmartToolCapabilityKind.ModelBacked,
+            "Enrich a standalone schema 1.1 chapter artifact with Foundry Local.",
+            $"{SmartToolPaths.ToolId} enrich --input <chapters.json> --output <enrichment.json> [options]",
+            """
+            # audio-transcriber enrich
+
+            ## When to use
+
+            Use this capability with any self-contained Audio Transcriber Chapter
+            Artifact schema `1.1` JSON, including artifacts authored by another
+            producer. It does not require the original audio, transcript input,
+            repository checkout, or a prior CLI invocation.
+
+            ## Determinism
+
+            Enrichment uses the exact Foundry Local model
+            `qwen3.5-0.8b-generic-cpu:3`, `seed=0`, greedy decoding
+            (`doSample=false`), and a strict schema `2.0` response parser. Model
+            downloads are disabled unless `--allow-model-download` is supplied;
+            model cache and weights remain external to the package. One corrective
+            response-contract retry is allowed by default.
+
+            ## Arguments
+
+            - `--input <chapters.json>` and `--output <enrichment.json>` are
+              required and must be different files.
+            - `--model` must be the exact required model alias.
+            - `--cache <path>`, `--allow-model-download`, `--timeout <seconds>`,
+              `--tokens <count>`, `--seed <integer>`, `--sampling true|false`,
+              `--temperature <0..2>`, and `--max-response-attempts 1|2`
+              configure the local request.
+            - `--failure-policy fail-fast|preserve-partial` selects provider
+              failure behavior. `--overall-summary` requests a chapter-summary-
+              only overall summary. `--overwrite` explicitly replaces output.
+
+            ## Result
+
+            The output preserves the input chapter snapshots and records stable
+            statuses, evidence reconstructed from trusted source segments, exact
+            model/generation metadata, and sanitized provider diagnostics.
+
+            ## Failures
+
+            Schema `1.0` is rejected because it lacks source-segment snapshots;
+            regenerate it with `chapters`. Raw model output, paths, and hidden
+            state are never copied into diagnostics. Malformed or non-JSON output
+            is rejected, with at most one bounded corrective retry.
+            """
         )
     ];
 }

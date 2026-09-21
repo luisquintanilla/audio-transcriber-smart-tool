@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/luisquintanilla/audio-transcriber-smart-tool/schemas/audio-transcriber-chapters-1.1.schema.json",
+  "title": "Audio Transcriber Chapter Artifact",
+  "description": "Self-contained source-linked chapter artifact contract. Schema 1.1 is required for trustworthy enrichment evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "source", "provenance", "generation", "chapters"],
+  "properties": {
+    "schemaVersion": { "const": "1.1" },
+    "source": { "type": "string", "minLength": 1 },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "generation": { "$ref": "#/$defs/generation" },
+    "chapters": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/chapter" }
+    }
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "metadata"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "packageId": { "type": "string" },
+        "packageVersion": { "type": "string" },
+        "source": { "type": "string" },
+        "cachePath": { "type": "string" },
+        "metadata": { "$ref": "#/$defs/metadata" }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "provider", "configuration"],
+      "properties": {
+        "algorithm": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 },
+        "configuration": { "$ref": "#/$defs/metadata" }
+      }
+    },
+    "boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startSegmentId",
+        "endSegmentId",
+        "startOriginalOrdinal",
+        "endOriginalOrdinal",
+        "startSnappedToSegmentBoundary",
+        "endSnappedToSegmentBoundary"
+      ],
+      "properties": {
+        "startSegmentId": { "type": "string", "minLength": 1 },
+        "endSegmentId": { "type": "string", "minLength": 1 },
+        "startOriginalOrdinal": { "type": "integer", "minimum": 0 },
+        "endOriginalOrdinal": { "type": "integer", "minimum": 0 },
+        "startSnappedToSegmentBoundary": { "const": true },
+        "endSnappedToSegmentBoundary": { "const": true },
+        "gapBefore": { "$ref": "#/$defs/timestamp" },
+        "gapAfter": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]+:[0-5][0-9]:[0-5][0-9](\\.[0-9]{1,7})?$"
+    },
+    "sourceSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "originalOrdinal",
+        "start",
+        "end",
+        "text",
+        "confidence",
+        "sourceMetadata"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "sourceId": { "type": "string" },
+        "originalOrdinal": { "type": "integer", "minimum": 0 },
+        "start": { "$ref": "#/$defs/timestamp" },
+        "end": { "$ref": "#/$defs/timestamp" },
+        "text": { "type": "string", "minLength": 1 },
+        "speaker": { "type": "string" },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "sourceMetadata": { "$ref": "#/$defs/metadata" }
+      }
+    },
+    "sourceMetadataEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceSegmentId", "key", "value"],
+      "properties": {
+        "sourceSegmentId": { "type": "string", "minLength": 1 },
+        "key": { "type": "string", "minLength": 1 },
+        "value": { "type": "string" }
+      }
+    },
+    "chapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "id",
+        "title",
+        "start",
+        "end",
+        "text",
+        "score",
+        "boundary",
+        "sourceSegmentIds",
+        "sourceIds",
+        "sourceSegments",
+        "sourceMetadata"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.1" },
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "start": { "$ref": "#/$defs/timestamp" },
+        "end": { "$ref": "#/$defs/timestamp" },
+        "text": { "type": "string", "minLength": 1 },
+        "score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "boundary": { "$ref": "#/$defs/boundary" },
+        "sourceSegmentIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "sourceIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "sourceSegments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/sourceSegment" }
+        },
+        "sourceMetadata": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sourceMetadataEntry" }
+        }
+      }
+    }
+  }
+}

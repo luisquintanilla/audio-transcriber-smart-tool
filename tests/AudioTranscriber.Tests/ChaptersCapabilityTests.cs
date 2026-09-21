@@ -32,7 +32,7 @@ public sealed class ChaptersCapabilityTests
         Assert.Equal(0, exitCode);
         Assert.Contains("Wrote 1 chapter(s)", stdout.ToString(), StringComparison.Ordinal);
         using var json = JsonDocument.Parse(File.ReadAllText(outputPath));
-        Assert.Equal("1.0", json.RootElement.GetProperty("schemaVersion").GetString());
+        Assert.Equal("1.1", json.RootElement.GetProperty("schemaVersion").GetString());
         Assert.Equal("deterministic", json.RootElement.GetProperty("generation").GetProperty("provider").GetString());
         Assert.Equal(
             ["segment-first", "segment-second"],
